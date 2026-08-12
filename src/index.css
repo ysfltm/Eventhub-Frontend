@@ -1,0 +1,607 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Tailwind v4 — Override indigo & purple → CST Blue palette
+   This applies globally to ALL pages using indigo-* / purple-* classes
+───────────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Remap indigo → CST Blue */
+  --color-indigo-50:  #e8f3fb;
+  --color-indigo-100: #c8e0f5;
+  --color-indigo-200: #9cc6ec;
+  --color-indigo-300: #6aabdf;
+  --color-indigo-400: #3b90d4;
+  --color-indigo-500: #1979C8;
+  --color-indigo-600: #1D56B6;
+  --color-indigo-700: #152A8F;
+  --color-indigo-800: #0d1f6a;
+  --color-indigo-900: #091648;
+  --color-indigo-950: #050d2c;
+
+  /* Remap purple → CST Blue (same family) */
+  --color-purple-50:  #e8f3fb;
+  --color-purple-100: #c8e0f5;
+  --color-purple-200: #9cc6ec;
+  --color-purple-300: #6aabdf;
+  --color-purple-400: #3b90d4;
+  --color-purple-500: #1979C8;
+  --color-purple-600: #1D56B6;
+  --color-purple-700: #152A8F;
+  --color-purple-800: #0d1f6a;
+  --color-purple-900: #091648;
+  --color-purple-950: #050d2c;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CST Brand Design Tokens — Dark Mode (default)
+───────────────────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+
+  /* ── Primary Blues ── */
+  --cst-blue-900:  #0d1f6a;
+  --cst-blue-800:  #152A8F;
+  --cst-blue-700:  #1D56B6;
+  --cst-blue-600:  #1979C8;
+  --cst-blue-500:  #3b90d4;
+  --cst-blue-400:  #6aabdf;
+  --cst-blue-200:  #9cc6ec;
+  --cst-blue-100:  #c8e0f5;
+
+  /* ── Primary Reds ── */
+  --cst-red-900:  #5c0b0d;
+  --cst-red-800:  #8F1115;
+  --cst-red-700:  #B51F24;
+  --cst-red-600:  #D92B2B;
+  --cst-red-400:  #e86363;
+  --cst-red-200:  #fbbcbc;
+
+  /* ── Dark Surface Scale ── */
+  --surface-950:  #020617;
+  --surface-900:  #0f172a;
+  --surface-850:  #131d31;
+  --surface-800:  #1e293b;
+  --surface-700:  #293548;
+  --surface-600:  #334155;
+  --surface-500:  #475569;
+
+  /* ── Text Scale ── */
+  --text-primary:    #f1f5f9;
+  --text-secondary:  #94a3b8;
+  --text-muted:      #64748b;
+  --text-inverse:    #111827;
+
+  /* ── Borders ── */
+  --border-subtle:   rgba(255,255,255,0.06);
+  --border-default:  rgba(255,255,255,0.10);
+  --border-strong:   rgba(255,255,255,0.18);
+
+  /* ── Semantic Roles ── */
+  --color-primary:       var(--cst-blue-700);
+  --color-primary-hover: var(--cst-blue-600);
+  --color-danger:        var(--cst-red-700);
+  --color-danger-hover:  var(--cst-red-600);
+
+  /* ── Page / Component Surfaces ── */
+  --bg-page:       var(--surface-950);
+  --bg-card:       var(--surface-900);
+  --bg-input:      var(--surface-950);
+  --bg-sidebar:    var(--surface-900);
+  --bg-header:     rgba(15, 23, 42, 0.92);
+
+  /* ── Navigation Active State ── */
+  --nav-active-bg:      rgba(29,86,182,0.12);
+  --nav-active-border:  var(--cst-blue-700);
+  --nav-active-text:    var(--cst-blue-400);
+  --nav-hover-bg:       rgba(255,255,255,0.05);
+
+  /* ── Shadows ── */
+  --shadow-xs:   0 1px 2px rgba(0,0,0,0.4);
+  --shadow-sm:   0 2px 4px rgba(0,0,0,0.4);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg:   0 8px 24px rgba(0,0,0,0.6);
+  --shadow-xl:   0 16px 40px rgba(0,0,0,0.7);
+  --shadow-blue: 0 4px 16px rgba(29,86,182,0.35);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+
+  /* ── Dimensions ── */
+  --nav-sidebar-width:     256px;
+  --nav-sidebar-collapsed: 64px;
+  --nav-header-height:     56px;
+
+  /* ── Border Radius ── */
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-2xl:  20px;
+  --radius-full: 9999px;
+
+  /* ── Z-Index ── */
+  --z-sidebar:  40;
+  --z-backdrop: 39;
+  --z-header:   50;
+  --z-dropdown: 60;
+  --z-modal:    80;
+  --z-toast:    90;
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-size-xs:   11px;
+  --font-size-sm:   13px;
+  --font-size-base: 15px;
+  --font-size-lg:   16px;
+
+  /* ── Transitions ── */
+  --ease-enterprise:  cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast:    150ms;
+  --duration-normal:  180ms;
+  --duration-medium:  220ms;
+  --duration-slow:    250ms;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Light Mode — applied when <html data-theme="light">
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --surface-950:  #ffffff;
+  --surface-900:  #ffffff;
+  --surface-850:  #f8fafc;
+  --surface-800:  #f1f5f9;
+  --surface-700:  #e2e8f0;
+  --surface-600:  #cbd5e1;
+  --surface-500:  #94a3b8;
+
+  /* Text */
+  --text-primary:    #0f172a;
+  --text-secondary:  #334155;
+  --text-muted:      #64748b;
+  --text-inverse:    #ffffff;
+
+  /* Borders */
+  --border-subtle:   rgba(0,0,0,0.06);
+  --border-default:  #e2e8f0;
+  --border-strong:   #cbd5e1;
+
+  /* Page surfaces */
+  --bg-page:    #f1f5f9;
+  --bg-card:    #ffffff;
+  --bg-input:   #ffffff;
+  --bg-sidebar: #ffffff;
+  --bg-header:  rgba(255,255,255,0.92);
+
+  /* Nav active */
+  --nav-active-bg:      rgba(29,86,182,0.08);
+  --nav-active-border:  var(--cst-blue-700);
+  --nav-active-text:    var(--cst-blue-700);
+  --nav-hover-bg:       rgba(0,0,0,0.04);
+
+  /* Shadows (lighter in light mode) */
+  --shadow-xs:   0 1px 2px rgba(0,0,0,0.05);
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg:   0 8px 24px rgba(0,0,0,0.10);
+  --shadow-xl:   0 16px 40px rgba(0,0,0,0.12);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* Light mode utility adaptations */
+[data-theme="light"] .bg-slate-950,
+[data-theme="light"] .bg-slate-950\/60,
+[data-theme="light"] .bg-slate-950\/80,
+[data-theme="light"] .min-h-screen.bg-slate-950 {
+  background-color: var(--surface-800) !important;
+}
+
+[data-theme="light"] .bg-slate-900,
+[data-theme="light"] .bg-slate-900\/80,
+[data-theme="light"] .bg-slate-900\/60 {
+  background-color: var(--bg-card) !important;
+}
+
+[data-theme="light"] .bg-slate-800,
+[data-theme="light"] .bg-slate-800\/80,
+[data-theme="light"] .bg-slate-800\/60,
+[data-theme="light"] .hover\:bg-slate-800:hover {
+  background-color: var(--surface-800) !important;
+}
+
+[data-theme="light"] .border-slate-800,
+[data-theme="light"] .border-slate-800\/80,
+[data-theme="light"] .border-slate-800\/60,
+[data-theme="light"] .border-slate-700,
+[data-theme="light"] .border-slate-700\/50 {
+  border-color: var(--border-default) !important;
+}
+
+/* Text Overrides for High Contrast in Light Mode */
+[data-theme="light"] .text-slate-100,
+[data-theme="light"] .text-slate-200 {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .text-slate-300,
+[data-theme="light"] .text-slate-400 {
+  color: #334155 !important;
+}
+
+[data-theme="light"] .text-slate-500,
+[data-theme="light"] .text-slate-600 {
+  color: #475569 !important;
+}
+
+/* Icons inside solid dark buttons & badges remain white */
+.bg-\[var\(--cst-blue-700\)\] svg,
+.bg-\[var\(--cst-red-700\)\] svg,
+.bg-blue-600 svg,
+.bg-red-600 svg,
+.bg-slate-900 svg.text-white,
+button.bg-blue-600 svg,
+button.bg-red-600 svg {
+  color: #ffffff !important;
+}
+
+/* Light Mode Chip & Badge Color Palette Adjustments */
+[data-theme="light"] .bg-emerald-950\/50,
+[data-theme="light"] .bg-emerald-950\/40,
+[data-theme="light"] .bg-emerald-950\/30,
+[data-theme="light"] .bg-emerald-950\/20 {
+  background-color: #ecfdf5 !important; /* Soft mint green */
+  border-color: #a7f3d0 !important;
+}
+
+[data-theme="light"] .text-emerald-300,
+[data-theme="light"] .text-emerald-400 {
+  color: #047857 !important; /* Dark emerald green text */
+}
+
+[data-theme="light"] .bg-indigo-950\/80,
+[data-theme="light"] .bg-indigo-950\/60,
+[data-theme="light"] .bg-indigo-950\/50,
+[data-theme="light"] .bg-indigo-950\/40,
+[data-theme="light"] .bg-indigo-950\/30 {
+  background-color: #eff6ff !important; /* Soft blue */
+  border-color: #bfdbfe !important;
+}
+
+[data-theme="light"] .text-indigo-300,
+[data-theme="light"] .text-indigo-400 {
+  color: #1d4ed8 !important; /* Rich blue text */
+}
+
+[data-theme="light"] .bg-purple-950\/80,
+[data-theme="light"] .bg-purple-950\/60,
+[data-theme="light"] .bg-purple-950\/50,
+[data-theme="light"] .bg-purple-950\/40 {
+  background-color: #f5f3ff !important; /* Soft purple */
+  border-color: #ddd6fe !important;
+}
+
+[data-theme="light"] .text-purple-300,
+[data-theme="light"] .text-purple-400 {
+  color: #6d28d9 !important;
+}
+
+[data-theme="light"] .bg-red-950\/50,
+[data-theme="light"] .bg-red-950\/40,
+[data-theme="light"] .bg-red-950\/30 {
+  background-color: #fef2f2 !important; /* Soft red */
+  border-color: #fecaca !important;
+}
+
+[data-theme="light"] .text-red-300,
+[data-theme="light"] .text-red-400 {
+  color: #b91c1c !important;
+}
+
+/* Auth pages — card panels */
+[data-theme="light"] .backdrop-blur-xl {
+  background-color: rgba(255,255,255,0.95) !important;
+}
+
+/* Input fields */
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-default) !important;
+}
+
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* Cards / elevated surfaces */
+[data-theme="light"] .rounded-2xl.bg-slate-900,
+[data-theme="light"] .rounded-3xl.bg-slate-900 {
+  background-color: var(--bg-card) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] .bg-slate-900 {
+  background-color: var(--bg-card) !important;
+}
+
+[data-theme="light"] .bg-slate-900\/80,
+[data-theme="light"] .bg-slate-900\/60 {
+  background-color: rgba(255,255,255,0.92) !important;
+}
+
+[data-theme="light"] .border-slate-800,
+[data-theme="light"] .border-slate-800\/80,
+[data-theme="light"] .border-slate-800\/60 {
+  border-color: var(--border-default) !important;
+}
+
+[data-theme="light"] .text-slate-100,
+[data-theme="light"] .text-slate-200 {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .text-slate-300,
+[data-theme="light"] .text-slate-400 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .text-slate-500,
+[data-theme="light"] .text-slate-600 {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="light"] .bg-slate-800,
+[data-theme="light"] .hover\:bg-slate-800:hover {
+  background-color: var(--surface-800) !important;
+}
+
+[data-theme="light"] .bg-slate-950\/80 {
+  background-color: rgba(240,242,247,0.92) !important;
+}
+
+/* Auth pages — card panels */
+[data-theme="light"] .backdrop-blur-xl {
+  background-color: rgba(255,255,255,0.95) !important;
+}
+
+/* Input fields */
+[data-theme="light"] input,
+[data-theme="light"] select {
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-default) !important;
+}
+
+[data-theme="light"] input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* Cards / elevated surfaces */
+[data-theme="light"] .rounded-2xl.bg-slate-900,
+[data-theme="light"] .rounded-3xl.bg-slate-900 {
+  background-color: var(--bg-card) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENTERPRISE MOTION & ANIMATION SYSTEM
+───────────────────────────────────────────────────────────────────────────── */
+
+/* Keyframe Animations */
+@keyframes cstFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cstDropdownEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cstBellShake {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(14deg); }
+  40% { transform: rotate(-12deg); }
+  60% { transform: rotate(8deg); }
+  80% { transform: rotate(-4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes cstPulseOnce {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(29, 86, 182, 0.4); }
+  50% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(29, 86, 182, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(29, 86, 182, 0); }
+}
+
+/* Staggered Entrance Utility Classes */
+.cst-stagger-1 { animation: cstFadeUp 280ms cubic-bezier(0.2, 0.8, 0.2, 1) 0ms both; }
+.cst-stagger-2 { animation: cstFadeUp 280ms cubic-bezier(0.2, 0.8, 0.2, 1) 60ms both; }
+.cst-stagger-3 { animation: cstFadeUp 280ms cubic-bezier(0.2, 0.8, 0.2, 1) 120ms both; }
+.cst-stagger-4 { animation: cstFadeUp 280ms cubic-bezier(0.2, 0.8, 0.2, 1) 180ms both; }
+
+/* Interactive Elements */
+
+/* Premium Button Micro-Interactions */
+.cst-btn-motion {
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              background-color 180ms ease,
+              border-color 180ms ease !important;
+  will-change: transform;
+}
+.cst-btn-motion:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.02);
+}
+.cst-btn-motion:active:not(:disabled) {
+  transform: translateY(0) scale(0.98) !important;
+}
+
+/* Premium Card Hover Lift */
+.cst-card-hover {
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 220ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  will-change: transform;
+}
+.cst-card-hover:hover {
+  transform: translateY(-6px);
+  border-color: var(--cst-blue-600) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+.cst-card-hover:hover .cst-card-icon {
+  transform: rotate(6deg) scale(1.06);
+  color: var(--cst-blue-400) !important;
+}
+.cst-card-icon {
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), color 220ms ease;
+}
+
+/* Premium Nav Link Underline & Motion */
+.cst-nav-link-animated {
+  position: relative;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              color 180ms ease,
+              background-color 180ms ease !important;
+}
+.cst-nav-link-animated:hover {
+  transform: translateY(-2px);
+}
+.cst-nav-link-animated:hover .cst-nav-icon {
+  transform: scale(1.05);
+}
+.cst-nav-icon {
+  transition: transform 180ms ease;
+}
+
+/* Animated Underline for Horizontal Nav links */
+.cst-nav-underline {
+  position: relative;
+}
+.cst-nav-underline::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background-color: var(--cst-blue-600);
+  border-radius: var(--radius-full);
+  transition: width 180ms cubic-bezier(0.2, 0.8, 0.2, 1), left 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.cst-nav-underline:hover::after,
+.cst-nav-underline[aria-current="page"]::after {
+  width: 70%;
+  left: 15%;
+}
+
+
+
+/* Notification Bell Shake on Hover */
+.cst-bell-hover:hover {
+  animation: cstBellShake 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* User Avatar Soft Glow */
+.cst-avatar-glow {
+  transition: box-shadow 200ms ease, transform 200ms ease !important;
+}
+.cst-avatar-glow:hover {
+  box-shadow: 0 0 12px rgba(29, 86, 182, 0.5) !important;
+  transform: scale(1.04);
+}
+
+/* Dropdown Menu Entrance */
+.cst-dropdown-anim {
+  animation: cstDropdownEnter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Search Focus Glow */
+.cst-search-input {
+  transition: border-color 200ms ease, box-shadow 200ms ease !important;
+}
+.cst-search-input:focus {
+  border-color: var(--cst-blue-600) !important;
+  box-shadow: 0 0 0 3px rgba(29, 86, 182, 0.25) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Focus Ring
+───────────────────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--cst-blue-600);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Custom Scrollbar
+───────────────────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--surface-600); border-radius: var(--radius-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--surface-500); }
+
+/* CST Red & Blue Hero Dual Gradient Surface */
+.cst-hero-gradient {
+  background: linear-gradient(135deg, rgba(29, 86, 182, 0.16) 0%, rgba(15, 23, 42, 0.95) 50%, rgba(181, 31, 36, 0.14) 100%) !important;
+  border: 1px solid var(--border-default) !important;
+}
+
+[data-theme="light"] .cst-hero-gradient {
+  background: linear-gradient(135deg, rgba(29, 86, 182, 0.08) 0%, #ffffff 50%, rgba(217, 43, 43, 0.08) 100%) !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 10px 30px rgba(29, 86, 182, 0.08) !important;
+}
+
+/* Red & Blue Accent Badges */
+.cst-badge-blue {
+  background: rgba(29, 86, 182, 0.15) !important;
+  border: 1px solid rgba(29, 86, 182, 0.35) !important;
+  color: var(--cst-blue-400) !important;
+}
+
+[data-theme="light"] .cst-badge-blue {
+  background: #eff6ff !important;
+  border: 1px solid #bfdbfe !important;
+  color: #1d4ed8 !important;
+}
+
+.cst-badge-red {
+  background: rgba(181, 31, 36, 0.15) !important;
+  border: 1px solid rgba(181, 31, 36, 0.35) !important;
+  color: var(--cst-red-400) !important;
+}
+
+[data-theme="light"] .cst-badge-red {
+  background: #fef2f2 !important;
+  border: 1px solid #fecaca !important;
+  color: #b91c1c !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Reduced Motion
+───────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
