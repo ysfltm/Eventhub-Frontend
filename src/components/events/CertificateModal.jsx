@@ -1,6 +1,9 @@
 import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Award, Printer, X, ShieldCheck, Calendar, MapPin, Building2, CheckCircle2, Sparkles } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import axiosClient from '../../api/axiosClient';
+import { ENDPOINTS } from '../../api/endpoints';
 import { generateCertificateId, formatCertificateDate } from '../../utils/certificateUtils';
 import { useLanguage } from '../../context/LanguageContext';
 import { getRoleStyle } from '../../utils/roleUtils';
@@ -15,14 +18,56 @@ export const CertificateModal = ({
   const certificateRef = useRef(null);
   const { t, dir } = useLanguage();
 
+  const targetPersonId =
+    user?.idPerson ||
+    user?.id ||
+    pass?.idPerson ||
+    pass?.person?.idPerson ||
+    pass?.person?.id;
+
+  // Fetch full Person record to ensure First Name & Last Name are populated even if JWT omitted them
+  const { data: personProfile } = useQuery({
+    queryKey: ['certificatePersonProfile', targetPersonId],
+    queryFn: async () => {
+      if (!targetPersonId) return null;
+      try {
+        const res = await axiosClient.get(ENDPOINTS.PERSON.BY_ID(targetPersonId));
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(targetPersonId && isOpen),
+  });
+
   if (!isOpen || !event) return null;
 
   const certId = generateCertificateId(event, user, pass);
-  const roleStyle = getRoleStyle(user?.role);
+  const roleStyle = getRoleStyle(user?.role || personProfile?.role);
   const issueDate = formatCertificateDate(event.date || pass?.checkInTime);
+
+  // Robust First Name & Last Name extraction
+  const resolvedFirst =
+    personProfile?.firstName ||
+    personProfile?.FirstName ||
+    user?.firstName ||
+    user?.FirstName ||
+    pass?.person?.firstName ||
+    pass?.person?.FirstName ||
+    '';
+
+  const resolvedLast =
+    personProfile?.lastName ||
+    personProfile?.LastName ||
+    user?.lastName ||
+    user?.LastName ||
+    pass?.person?.lastName ||
+    pass?.person?.LastName ||
+    '';
+
   const attendeeName =
-    user?.firstName && user?.lastName
-      ? `${user.firstName} ${user.lastName}`
+    resolvedFirst || resolvedLast
+      ? `${resolvedFirst} ${resolvedLast}`.trim()
       : user?.email?.split('@')[0] || 'Honored Participant';
 
   const hostName =
@@ -85,7 +130,7 @@ export const CertificateModal = ({
         <div className="p-4 sm:p-8 overflow-y-auto flex-1 flex items-center justify-center bg-slate-950/40">
           <div
             ref={certificateRef}
-            className="certificate-print-area w-full max-w-3xl bg-slate-900 border-8 border-double border-amber-500/40 rounded-3xl p-8 sm:p-10 shadow-2xl relative overflow-hidden text-center text-slate-100"
+            className="certificate-print-area w-full max-w-3xl bg-slate-900 border-8 border-double border-amber-500/50 rounded-3xl p-8 sm:p-10 shadow-2xl relative overflow-hidden text-center text-slate-100"
             style={{
               backgroundImage: 'radial-gradient(ellipse at center, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.95) 100%)',
             }}
@@ -118,7 +163,7 @@ export const CertificateModal = ({
                 {t('certificate.certifiesThat', 'This official document certifies that')}
               </p>
               <div className="space-y-1">
-                <h2 className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-100 capitalize">
+                <h2 className="cert-recipient-name text-2xl sm:text-4xl font-black text-amber-300 capitalize tracking-tight">
                   {attendeeName}
                 </h2>
                 <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-bold border border-amber-500/30 bg-amber-950/40 text-amber-300">
@@ -162,7 +207,7 @@ export const CertificateModal = ({
 
               {/* QR Verification Seal */}
               <div className="flex items-center gap-3 bg-slate-950/90 border border-slate-800 p-2 rounded-2xl">
-                <img src={qrUrl} alt="Certificate QR Verification" className="w-14 h-14 rounded-lg bg-white p-0.5" />
+                <img src={qrUrl} alt="Certificate QR Verification" className="w-14 h-14 rounded-lg bg-white p-0.5 shrink-0" />
                 <div className="text-[9px] space-y-0.5">
                   <p className="font-bold text-emerald-400 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" /> VERIFIED PASS
@@ -175,6 +220,58 @@ export const CertificateModal = ({
           </div>
         </div>
       </div>
+
+      {/* High-Fidelity Dedicated Print Stylesheet for Landscape Single-Page Certificate */}
+      <style>{`
+        @media print {
+          @page {
+            size: landscape;
+            margin: 0;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #090d16 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .certificate-print-area,
+          .certificate-print-area * {
+            visibility: visible !important;
+          }
+          .certificate-print-area {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            border-radius: 0 !important;
+            border: 14px double #d97706 !important;
+            padding: 40px 60px !important;
+            margin: 0 !important;
+            box-sizing: border-box !important;
+            background-color: #0b1120 !important;
+            background-image: radial-gradient(ellipse at center, #1e293b 0%, #0b1120 100%) !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+          }
+          .cert-recipient-name {
+            color: #fbbf24 !important;
+            -webkit-text-fill-color: #fbbf24 !important;
+            font-size: 32pt !important;
+            text-shadow: none !important;
+          }
+        }
+      `}</style>
     </div>,
     document.body
   );
