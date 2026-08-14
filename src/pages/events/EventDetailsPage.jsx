@@ -46,7 +46,9 @@ const FIELD_LABEL =
 const EventDetailsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, isOrganiser: ctxIsOrganiser, isSuperAdmin } = useContext(AuthContext);
+  const { user, isOrganiser: ctxIsOrganiser, isSuperAdmin, isStaff } = useContext(AuthContext);
+  const isOrganiser = ctxIsOrganiser || isSuperAdmin;
+  const canViewRoster = isStaff || isOrganiser || isSuperAdmin;
   const { addNotification } = useNotification();
   const { t } = useLanguage();
   const queryClient = useQueryClient();
@@ -76,8 +78,6 @@ const EventDetailsPage = () => {
 
   // Delete Event Modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-
-  const isOrganiser = ctxIsOrganiser || isSuperAdmin;
 
   // 1. Fetch Event details
   const {
@@ -670,7 +670,7 @@ const EventDetailsPage = () => {
               </Button>
             )}
 
-            {isOrganiser && (
+            {canViewRoster && (
               <Link to={`/events/${id}/attendees`}>
                 <Button variant="outline" className="w-full h-10 text-xs cursor-pointer">
                   <ListChecks className="w-4 h-4 mr-1.5 text-[var(--cst-blue-400)]" />
