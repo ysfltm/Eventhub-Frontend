@@ -61,13 +61,13 @@ const AppRoutes = () => {
             <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.EVENT_ORGANISER]} />}>
               <Route path="/events/new" element={<CreateEventPage />} />
               <Route path="/admin/analytics" element={<AnalyticsPage />} />
-              <Route path="/admin/users" element={<UserManagementPage />} />
             </Route>
 
-            {/* Door Check-In & Attendee Roster routes (SuperAdmin, Organiser, Staff) */}
+            {/* Door Check-In, User Roster & Attendee Roster routes (SuperAdmin, Organiser, Staff) */}
             <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.EVENT_ORGANISER, ROLES.STAFF]} />}>
               <Route path="/admin/check-in" element={<CheckInPage />} />
               <Route path="/check-in" element={<CheckInPage />} />
+              <Route path="/admin/users" element={<UserManagementPage />} />
               <Route path="/admin/events/:eventId/attendees" element={<AttendeeRosterPage />} />
               <Route path="/events/:id/attendees" element={<AttendeeRosterPage />} />
             </Route>
