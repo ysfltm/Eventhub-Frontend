@@ -25,6 +25,7 @@ import { ENDPOINTS } from '../api/endpoints';
 import { fetchMyPasses } from '../utils/passUtils';
 import { getRoleStyle, normalizeRole } from '../utils/roleUtils';
 import { useLanguage } from '../context/LanguageContext';
+import { AddToCalendarDropdown } from '../components/events/AddToCalendarDropdown';
 
 // ── Reusable Stat Card Component ─────────────────────────────────────────────
 const StatCard = ({ label, value, icon: Icon, subtext, colorScheme = 'blue' }) => {
@@ -459,12 +460,13 @@ const Dashboard = () => {
                     <MapPin className="w-3.5 h-3.5 text-[var(--cst-blue-400)] shrink-0 cst-card-icon" />
                     <span className="truncate">{evt.address || t('dashboard.locationTbd', 'Location TBD')}</span>
                   </div>
-                  <div className="pt-2 flex justify-end">
+                  <div className="pt-3 border-t border-[var(--border-subtle)]/60 flex items-center justify-between gap-2">
+                    <AddToCalendarDropdown event={evt} />
                     <Link
                       to={`/events/${evt.idEvent || evt.id}`}
-                      className="text-xs font-bold text-[var(--cst-blue-400)] group-hover:text-[var(--cst-blue-500)] flex items-center gap-1"
+                      className="text-xs font-bold text-[var(--cst-blue-400)] hover:text-[var(--cst-blue-500)] flex items-center gap-1 shrink-0"
                     >
-                      {t('dashboard.sessionDetails', 'Session Details')} <ChevronRight className="w-3.5 h-3.5" />
+                      {t('dashboard.sessionDetails', 'Details')} <ChevronRight className="w-3.5 h-3.5" />
                     </Link>
                   </div>
                 </div>
