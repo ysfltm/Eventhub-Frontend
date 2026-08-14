@@ -1,4 +1,4 @@
-﻿export const ar = {
+export const ar = {
   nav: {
     workspace: 'مساحة العمل',
     management: 'الادارة',
@@ -157,6 +157,11 @@
     noEventsPublished: 'لا توجد فعاليات منشورة',
     noEventsPublishedDesc: 'ستظهر الفعاليات المنشورة هنا.',
     claiming: 'جار الحصول...',
+    eventFull: 'الفعالية مكتملة',
+    eventPassed: 'انتهت الفعالية',
+    capacity: 'السعة',
+    spotsTaken: 'مقاعد محجوزة',
+    spotsRemaining: 'مقاعد متبقية',
   },
   eventDetails: {
     backToDirectory: 'العودة الى الدليل',
@@ -185,6 +190,19 @@
     loadingEvent: 'جار تحميل التفاصيل...',
     eventNotFound: 'الفعالية غير موجودة',
     failedToLoad: 'فشل تحميل تفاصيل الفعالية.',
+    capacity: 'سعة الحاضرين',
+    spotsTaken: 'مقاعد محجوزة',
+    spotsRemaining: 'مقاعد متبقية',
+    eventFull: 'الفعالية مكتملة',
+    eventPassed: 'انتهت الفعالية',
+    eventFullNotice: 'وصلت هذه الفعالية إلى السعة القصوى للمشاركين.',
+    eventPassedNotice: 'انتهت هذه الفعالية بالفعل وتم إغلاق باب التسجيل.',
+    editEvent: 'تعديل الفعالية',
+    deleteEvent: 'حذف الفعالية',
+    deleteConfirmTitle: 'حذف الفعالية المؤسسية',
+    deleteConfirmMessage: 'هل أنت متأكد من رغبتك في حذف هذه الفعالية؟ لا يمكن التراجع عن هذا الإجراء.',
+    eventUpdated: 'تم تحديث الفعالية بنجاح!',
+    eventDeleted: 'تم حذف الفعالية بنجاح.',
   },
   createEvent: {
     title: 'نشر جلسة جديدة',
@@ -199,6 +217,8 @@
     eventDate: 'تاريخ الفعالية *',
     startTime: 'وقت البداية *',
     endTime: 'وقت النهاية *',
+    capacity: 'الحد الأقصى لسعة الحضور *',
+    capacityPlaceholder: 'مثال: 100',
     location: 'الموقع / العنوان',
     livePreview: 'معاينة البطاقة المباشرة',
     previewTag: 'جاهز للنشر',

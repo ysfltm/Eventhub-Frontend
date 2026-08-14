@@ -16,6 +16,9 @@ import {
   XCircle,
   Pencil,
   Trash2,
+  Users,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
@@ -25,14 +28,27 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { AddressMapTrigger } from '../../components/maps/AddressMapTrigger';
 import { Alert } from '../../components/ui/Alert';
-import { fetchMyPasses, extractEventId, cancelParticipation, saveLocalClaimedPass } from '../../utils/passUtils';
+import { Modal } from '../../components/ui/Modal';
+import { Input } from '../../components/ui/Input';
+import { Label } from '../../components/ui/Label';
+import { Select } from '../../components/ui/Select';
+import { AddressLocationPicker } from '../../components/maps/AddressLocationPicker';
+import { fetchMyPasses, extractEventId, cancelParticipation, saveLocalClaimedPass, removeLocalClaimedPass } from '../../utils/passUtils';
 import { getRoleStyle } from '../../utils/roleUtils';
+import { isEventPassed, formatDateForInput, to24HourTimeSpan, TIME_OPTIONS_24H } from '../../utils/timeUtils';
+import { useLanguage } from '../../context/LanguageContext';
+
+const FIELD_INPUT =
+  'w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-2xl text-xs font-medium text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--cst-blue-600)] focus:ring-2 focus:ring-[var(--cst-blue-600)]/20 transition-all';
+const FIELD_LABEL =
+  'block text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1.5';
 
 const EventDetailsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, isOrganiser: ctxIsOrganiser, isSuperAdmin } = useContext(AuthContext);
   const { addNotification } = useNotification();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
 
   const [rating, setRating] = useState(5);
@@ -44,9 +60,26 @@ const EventDetailsPage = () => {
   const [editRating, setEditRating] = useState(5);
   const [editComment, setEditComment] = useState('');
 
+  // Edit Event Modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    title: '',
+    description: '',
+    idCompany: '',
+    date: '',
+    startTime: '09:00',
+    endTime: '18:00',
+    address: '',
+    person: '',
+    capacity: 100,
+  });
+
+  // Delete Event Modal state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
   const isOrganiser = ctxIsOrganiser || isSuperAdmin;
 
-  // Fetch Event details
+  // 1. Fetch Event details
   const {
     data: event,
     isLoading,
@@ -60,7 +93,38 @@ const EventDetailsPage = () => {
     },
   });
 
-  // Fetch user's passes to check registration and check-in status
+  // 2. Fetch participations for this specific event to calculate live attendance & spots
+  const { data: rawParticipations = [] } = useQuery({
+    queryKey: ['eventParticipations', id],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get(ENDPOINTS.PARTICIPATION.BY_EVENT(id));
+        return Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.$values || []);
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  // 3. Fetch companies list for Edit Modal dropdown
+  const { data: rawCompaniesData = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: async () => {
+      const res = await axiosClient.get(ENDPOINTS.COMPANY.BASE);
+      return res.data ?? [];
+    },
+    enabled: isOrganiser,
+  });
+
+  const companiesList = Array.isArray(rawCompaniesData)
+    ? rawCompaniesData
+    : Array.isArray(rawCompaniesData?.data)
+    ? rawCompaniesData.data
+    : Array.isArray(rawCompaniesData?.$values)
+    ? rawCompaniesData.$values
+    : [];
+
+  // 4. Fetch user's passes to check registration and check-in status
   const { data: myPasses = [] } = useQuery({
     queryKey: ['myPasses', user?.idPerson || user?.id || user?.email],
     queryFn: () => fetchMyPasses(user),
@@ -71,20 +135,139 @@ const EventDetailsPage = () => {
   const isRegistered = Boolean(existingPass);
   const isCheckedIn = Boolean(existingPass?.checkInTime || existingPass?.checkInStatus || existingPass?.status === 'CheckedIn');
 
+  // Attendance and capacity metrics
+  const attendeeCount = rawParticipations.length;
+  const rawCap = event?.capacity !== undefined && event?.capacity !== null ? event.capacity : (event?.Capacity !== undefined && event?.Capacity !== null ? event.Capacity : 100);
+  const capacity = parseInt(rawCap, 10);
+  const spotsRemaining = Math.max(0, capacity - attendeeCount);
+  const isEventFull = capacity === 0 || (capacity > 0 && attendeeCount >= capacity);
+  const hasEventPassed = isEventPassed(event?.date || event?.Date, event?.startTime || event?.StartTime);
+  const percentFilled = capacity > 0 ? Math.min(100, Math.round((attendeeCount / capacity) * 100)) : 100;
+
+  // Helper to extract error message
+  const extractErrorMessage = (err, fallbackMsg = 'An error occurred. Please try again.') => {
+    if (!err) return fallbackMsg;
+    const data = err.response?.data;
+    if (typeof data === 'string' && data.trim().length > 0) {
+      return data.trim();
+    }
+    if (data?.message) return data.message;
+    if (data?.title) return data.title;
+    if (data?.detail) return data.detail;
+    if (err.message) return err.message;
+    return fallbackMsg;
+  };
+
+  // Open Edit Modal with prefilled values
+  const handleOpenEditModal = () => {
+    if (!event) return;
+    setEditFormData({
+      title: event.title || event.Title || '',
+      description: event.description || event.Description || '',
+      idCompany: event.idCompany || event.IdCompany || event.company?.idCompany || event.company?.id || '',
+      date: formatDateForInput(event.date || event.Date),
+      startTime: (event.startTime || event.StartTime || '09:00:00').substring(0, 5),
+      endTime: (event.endTime || event.EndTime || '18:00:00').substring(0, 5),
+      address: event.address || event.Address || '',
+      person: event.person || event.Person || '',
+      capacity: event.capacity ?? event.Capacity ?? 100,
+    });
+    setIsEditModalOpen(true);
+  };
+
+  // Update Event Mutation: PUT /api/Event/{id}
+  const updateEventMutation = useMutation({
+    mutationFn: async (formData) => {
+      const parsedCapacity = parseInt(formData.capacity, 10) > 0 ? parseInt(formData.capacity, 10) : 100;
+      const payload = {
+        idEvent: targetEventId,
+        IdEvent: targetEventId,
+        title: formData.title,
+        Title: formData.title,
+        description: formData.description,
+        Description: formData.description,
+        idCompany: formData.idCompany ? parseInt(formData.idCompany, 10) : null,
+        IdCompany: formData.idCompany ? parseInt(formData.idCompany, 10) : null,
+        date: formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(),
+        Date: formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(),
+        startTime: to24HourTimeSpan(formData.startTime),
+        StartTime: to24HourTimeSpan(formData.startTime),
+        endTime: to24HourTimeSpan(formData.endTime),
+        EndTime: to24HourTimeSpan(formData.endTime),
+        address: formData.address,
+        Address: formData.address,
+        person: formData.person || null,
+        Person: formData.person || null,
+        capacity: parsedCapacity,
+        Capacity: parsedCapacity,
+      };
+      const res = await axiosClient.put(ENDPOINTS.EVENT.BY_ID(id), payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['event', id] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      setIsEditModalOpen(false);
+      addNotification({
+        type: 'event_updated',
+        title: 'Event Updated ✏️',
+        message: `"${editFormData.title}" has been updated successfully.`,
+      });
+    },
+    onError: (err) => {
+      console.error('Update event error:', err);
+    },
+  });
+
+  // Delete Event Mutation: DELETE /api/Event/{id}
+  const deleteEventMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axiosClient.delete(ENDPOINTS.EVENT.BY_ID(id));
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      setIsDeleteModalOpen(false);
+      addNotification({
+        type: 'event_deleted',
+        title: 'Event Deleted 🗑️',
+        message: `"${event?.title || 'Event'}" was removed from the directory.`,
+      });
+      navigate('/events', { state: { message: 'Event deleted successfully.' } });
+    },
+    onError: (err) => {
+      console.error('Delete event error:', err);
+      alert(`Delete Error: ${extractErrorMessage(err, 'Failed to delete event.')}`);
+    },
+  });
+
   // Cancel registration mutation
   const cancelMutation = useMutation({
     mutationFn: async () => {
       const partId = existingPass?.id || existingPass?.idParticipation;
-      return await cancelParticipation(targetEventId, partId);
+      return await cancelParticipation(targetEventId, partId, user);
     },
     onSuccess: (data) => {
+      removeLocalClaimedPass(targetEventId, user);
       queryClient.invalidateQueries({ queryKey: ['myPasses'] });
       queryClient.invalidateQueries({ queryKey: ['event', id] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['allEventAttendeeCounts'] });
+      queryClient.invalidateQueries({ queryKey: ['allParticipations'] });
+      queryClient.invalidateQueries({ queryKey: ['eventParticipations', id] });
       alert(data?.message || 'Successfully cancelled event registration.');
     },
     onError: (err) => {
+      if (err.response?.status === 404 || err.response?.status === 400) {
+        removeLocalClaimedPass(targetEventId, user);
+        queryClient.invalidateQueries({ queryKey: ['myPasses'] });
+        queryClient.invalidateQueries({ queryKey: ['event', id] });
+        queryClient.invalidateQueries({ queryKey: ['events'] });
+        queryClient.invalidateQueries({ queryKey: ['allEventAttendeeCounts'] });
+        queryClient.invalidateQueries({ queryKey: ['allParticipations'] });
+      }
       console.error('Cancel registration error:', err);
-      alert(err.response?.data?.message || 'Failed to cancel registration.');
+      alert(extractErrorMessage(err, 'Failed to cancel registration.'));
     },
   });
 
@@ -149,6 +332,7 @@ const EventDetailsPage = () => {
       saveLocalClaimedPass(data, id, user);
       queryClient.invalidateQueries({ queryKey: ['myPasses'] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['eventParticipations', id] });
       const passId = data?.idPass || data?.idParticipation || existingPass?.idPass;
       addNotification({
         type: 'registration_success',
@@ -175,20 +359,6 @@ const EventDetailsPage = () => {
       }
     },
   });
-
-  // Helper to extract C# backend error message (including raw 400 Bad Request profanity string responses)
-  const extractErrorMessage = (err, fallbackMsg = 'An error occurred. Please try again.') => {
-    if (!err) return fallbackMsg;
-    const data = err.response?.data;
-    if (typeof data === 'string' && data.trim().length > 0) {
-      return data.trim();
-    }
-    if (data?.message) return data.message;
-    if (data?.title) return data.title;
-    if (data?.detail) return data.detail;
-    if (err.message) return err.message;
-    return fallbackMsg;
-  };
 
   // Submit Feedback mutation
   const submitFeedbackMutation = useMutation({
@@ -226,7 +396,6 @@ const EventDetailsPage = () => {
         if (err.response?.status === 400) {
           throw err;
         }
-        // Fallback to PUT /api/Feedback
         const res = await axiosClient.put(ENDPOINTS.FEEDBACK.BASE, payload);
         return res.data;
       }
@@ -337,21 +506,67 @@ const EventDetailsPage = () => {
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
           Back to Events List
         </Link>
-        <span className="text-[10px] text-[var(--cst-blue-400)] font-mono uppercase tracking-widest bg-[var(--cst-blue-800)]/20 px-2.5 py-1 rounded-md border border-[var(--cst-blue-600)]/30">
-          Event ID #{event.idEvent || event.IdEvent || id}
-        </span>
+        
+        <div className="flex items-center gap-2">
+          {isOrganiser && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenEditModal}
+                className="cst-btn-motion text-xs text-sky-400 border-sky-800/40 hover:bg-sky-950/40 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>{t('eventDetails.editEvent', 'Edit Event')}</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="cst-btn-motion text-xs text-red-400 border-red-800/40 hover:bg-red-950/40 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{t('eventDetails.deleteEvent', 'Delete')}</span>
+              </Button>
+            </>
+          )}
+          <span className="text-[10px] text-[var(--cst-blue-400)] font-mono uppercase tracking-widest bg-[var(--cst-blue-800)]/20 px-2.5 py-1 rounded-md border border-[var(--cst-blue-600)]/30">
+            Event ID #{event.idEvent || event.IdEvent || id}
+          </span>
+        </div>
       </div>
 
       {/* Hero Banner Card */}
       <Card className="cst-stagger-1 cst-hero-gradient border-[var(--border-default)] p-6 md:p-8 rounded-3xl shadow-2xl overflow-hidden relative">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 relative z-10">
           <div className="space-y-3 flex-1">
-            {(event.company || event.Company || event.companyName || event.CompanyName) && (
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/30 rounded-lg text-[var(--cst-blue-400)] text-[10px] font-bold uppercase tracking-wider">
-                <Building2 className="w-3.5 h-3.5" />
-                <span>{event.company?.name || event.Company?.Name || event.companyName || event.CompanyName}</span>
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {(event.company || event.Company || event.companyName || event.CompanyName) ? (
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/30 rounded-lg text-[var(--cst-blue-400)] text-[10px] font-bold uppercase tracking-wider">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>{event.company?.name || event.Company?.Name || event.companyName || event.CompanyName}</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-red-950/40 border border-red-800/40 rounded-lg text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                  <span>{t('events.independentSession', 'Independent Session')}</span>
+                </div>
+              )}
+
+              {hasEventPassed && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-950/50 border border-amber-800/50 rounded-lg text-amber-400 text-[10px] font-bold uppercase tracking-wider">
+                  <Clock className="w-3 h-3" />
+                  <span>{t('events.eventPassed', 'Event Passed')}</span>
+                </span>
+              )}
+
+              {isEventFull && !hasEventPassed && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 bg-rose-950/50 border border-rose-800/50 rounded-lg text-rose-400 text-[10px] font-bold uppercase tracking-wider">
+                  <Users className="w-3 h-3" />
+                  <span>{t('events.eventFull', 'Event Full')}</span>
+                </span>
+              )}
+            </div>
+
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[var(--text-primary)] leading-tight">
               {event.title || event.Title || 'Untitled Event'}
             </h1>
@@ -389,7 +604,7 @@ const EventDetailsPage = () => {
               <div className="space-y-2">
                 <Button
                   onClick={() => navigate(existingPass ? `/tickets/${existingPass.idPass || existingPass.idParticipation}` : '/passes')}
-                  className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                  className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4 mr-2" />
                   View Entry Ticket
@@ -402,18 +617,44 @@ const EventDetailsPage = () => {
                   }}
                   disabled={isCheckedIn || cancelMutation.isPending}
                   variant="outline"
-                  className="w-full text-xs text-red-400 border-red-800/50 hover:bg-red-950/40"
+                  className="w-full text-xs text-red-400 border-red-800/50 hover:bg-red-950/40 cursor-pointer"
                   title={isCheckedIn ? 'Cannot cancel after door check-in' : 'Cancel Registration'}
                 >
                   <XCircle className="w-3.5 h-3.5 mr-1.5" />
                   {cancelMutation.isPending ? 'Cancelling...' : 'Cancel Registration'}
                 </Button>
               </div>
+            ) : hasEventPassed ? (
+              <div className="space-y-1.5">
+                <Button
+                  disabled
+                  className="w-full h-11 bg-slate-800/60 text-slate-400 border border-slate-700/50 font-semibold cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Clock className="w-4 h-4 text-slate-500" />
+                  <span>{t('events.eventPassed', 'Event Passed')}</span>
+                </Button>
+                <p className="text-[10px] text-amber-400/90 text-center font-medium">
+                  {t('eventDetails.eventPassedNotice', 'This event has concluded. Registration is closed.')}
+                </p>
+              </div>
+            ) : isEventFull ? (
+              <div className="space-y-1.5">
+                <Button
+                  disabled
+                  className="w-full h-11 bg-rose-950/40 text-rose-400 border border-rose-800/40 font-semibold cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Users className="w-4 h-4 text-rose-400" />
+                  <span>{t('events.eventFull', 'Event Full')}</span>
+                </Button>
+                <p className="text-[10px] text-rose-400/90 text-center font-medium">
+                  {t('eventDetails.eventFullNotice', 'This event has reached full capacity.')}
+                </p>
+              </div>
             ) : (
               <Button
                 onClick={() => claimPassMutation.mutate()}
                 disabled={claimPassMutation.isPending}
-                className="w-full h-11 bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white font-semibold"
+                className="w-full h-11 bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white font-semibold cursor-pointer"
               >
                 {claimPassMutation.isPending ? (
                   <div className="flex items-center gap-2">
@@ -431,9 +672,9 @@ const EventDetailsPage = () => {
 
             {isOrganiser && (
               <Link to={`/events/${id}/attendees`}>
-                <Button variant="outline" className="w-full h-10 text-xs">
+                <Button variant="outline" className="w-full h-10 text-xs cursor-pointer">
                   <ListChecks className="w-4 h-4 mr-1.5 text-[var(--cst-blue-400)]" />
-                  View Attendee Roster
+                  View Attendee Roster ({attendeeCount})
                 </Button>
               </Link>
             )}
@@ -441,13 +682,13 @@ const EventDetailsPage = () => {
         </div>
       </Card>
 
-      {/* Grid: Event Metadata & Venue Details */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 cst-stagger-2">
+      {/* Grid: Event Metadata & Capacity Details */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 cst-stagger-2">
 
         {/* Date & Time */}
-        <Card className="cst-card-hover p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-2xl">
+        <Card className="cst-card-hover p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-2xl flex flex-col justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/30 text-[var(--cst-blue-400)]">
+            <div className="p-3 rounded-xl bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/30 text-[var(--cst-blue-400)] shrink-0">
               <Calendar className="w-5 h-5 cst-card-icon" />
             </div>
             <div>
@@ -460,10 +701,40 @@ const EventDetailsPage = () => {
           </div>
         </Card>
 
-        {/* Venue Address */}
-        <Card className="cst-card-hover p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-2xl">
+        {/* Capacity & Attendance */}
+        <Card className="cst-card-hover p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-2xl flex flex-col justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/30 text-[var(--cst-blue-400)]">
+            <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/40 text-emerald-400 shrink-0">
+              <Users className="w-5 h-5 cst-card-icon" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Attendance &amp; Capacity</p>
+              <p className="text-sm font-black text-[var(--text-primary)] mt-0.5">
+                {attendeeCount} / {capacity} <span className="text-xs font-normal text-[var(--text-secondary)]">spots taken</span>
+              </p>
+              <p className="text-xs text-emerald-400 font-semibold mt-0.5">
+                {spotsRemaining > 0 ? `${spotsRemaining} spots remaining` : 'At maximum capacity'}
+              </p>
+            </div>
+          </div>
+          <div className="w-full bg-[var(--surface-800)] rounded-full h-1.5 mt-3 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 rounded-full ${
+                percentFilled >= 100
+                  ? 'bg-rose-500'
+                  : percentFilled >= 80
+                  ? 'bg-amber-500'
+                  : 'bg-emerald-500'
+              }`}
+              style={{ width: `${percentFilled}%` }}
+            />
+          </div>
+        </Card>
+
+        {/* Venue Address */}
+        <Card className="cst-card-hover p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-2xl flex flex-col justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-xl bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/30 text-[var(--cst-blue-400)] shrink-0">
               <MapPin className="w-5 h-5 cst-card-icon" />
             </div>
             <div className="min-w-0 flex-1">
@@ -472,20 +743,20 @@ const EventDetailsPage = () => {
                 <AddressMapTrigger
                   address={event.address || 'San Francisco, CA'}
                   showIcon={false}
-                  className="max-w-[240px]"
+                  className="max-w-[200px]"
                 />
               </div>
               <p className="text-xs text-[var(--cst-blue-400)] font-semibold mt-0.5 flex items-center gap-1">
-                <span>Click to view interactive map</span>
+                <span>View interactive map</span>
               </p>
             </div>
           </div>
         </Card>
 
         {/* Ratings Summary */}
-        <Card className="cst-card-hover p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-2xl">
+        <Card className="cst-card-hover p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-2xl flex flex-col justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/40 text-amber-400">
+            <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/40 text-amber-400 shrink-0">
               <Star className="w-5 h-5 cst-card-icon fill-amber-400" />
             </div>
             <div>
@@ -506,7 +777,7 @@ const EventDetailsPage = () => {
       {claimPassMutation.isError && (
         <Alert variant="destructive" className="cst-stagger-3">
           <AlertCircle className="w-4 h-4 mr-2" />
-          {claimPassMutation.error?.response?.data?.message || 'Failed to claim digital pass. Please try again.'}
+          {extractErrorMessage(claimPassMutation.error, 'Failed to claim digital pass. Please try again.')}
         </Alert>
       )}
 
@@ -758,8 +1029,208 @@ const EventDetailsPage = () => {
         </div>
       </Card>
 
+      {/* ── Edit Event Modal (Organisers & SuperAdmin) ───────── */}
+      {isOrganiser && isEditModalOpen && (
+        <Modal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title="Edit Corporate Event"
+          description="Update session title, description, host, date, time, address, and capacity limit."
+          maxWidth="max-w-2xl"
+        >
+          {updateEventMutation.isError && (
+            <Alert variant="destructive" className="mb-4">
+              {extractErrorMessage(updateEventMutation.error, 'Failed to update event.')}
+            </Alert>
+          )}
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateEventMutation.mutate(editFormData);
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-title">Event Title *</Label>
+              <Input
+                id="edit-title"
+                type="text"
+                value={editFormData.title}
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, title: e.target.value }))}
+                required
+                disabled={updateEventMutation.isPending}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-company">Host Company</Label>
+              <Select
+                id="edit-company"
+                value={editFormData.idCompany}
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, idCompany: e.target.value }))}
+                disabled={updateEventMutation.isPending}
+              >
+                <option value="" className="bg-slate-900 text-slate-400">Select host company (or none)...</option>
+                {companiesList.map((c) => (
+                  <option key={c.idCompany || c.id} value={c.idCompany || c.id} className="bg-slate-900 text-slate-100">
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-description">Event Description *</Label>
+              <textarea
+                id="edit-description"
+                rows={3}
+                value={editFormData.description}
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, description: e.target.value }))}
+                required
+                disabled={updateEventMutation.isPending}
+                className={FIELD_INPUT}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-date">Event Date *</Label>
+                <Input
+                  id="edit-date"
+                  type="date"
+                  value={editFormData.date}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, date: e.target.value }))}
+                  required
+                  disabled={updateEventMutation.isPending}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-start">Start Time</Label>
+                <Select
+                  id="edit-start"
+                  value={editFormData.startTime}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, startTime: e.target.value }))}
+                  disabled={updateEventMutation.isPending}
+                >
+                  {TIME_OPTIONS_24H.map((t) => (
+                    <option key={t} value={t} className="bg-slate-900 text-slate-100">{t}</option>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-end">End Time</Label>
+                <Select
+                  id="edit-end"
+                  value={editFormData.endTime}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, endTime: e.target.value }))}
+                  disabled={updateEventMutation.isPending}
+                >
+                  {TIME_OPTIONS_24H.map((t) => (
+                    <option key={t} value={t} className="bg-slate-900 text-slate-100">{t}</option>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-capacity">Capacity Limit *</Label>
+                <Input
+                  id="edit-capacity"
+                  type="number"
+                  min="1"
+                  value={editFormData.capacity}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, capacity: e.target.value }))}
+                  required
+                  disabled={updateEventMutation.isPending}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Interactive Venue Address &amp; Geo Location *</Label>
+              <AddressLocationPicker
+                value={editFormData.address}
+                onChange={(addr) => setEditFormData((prev) => ({ ...prev, address: addr }))}
+                placeholder="Type venue address or select on map..."
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border-subtle)]">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditModalOpen(false)}
+                disabled={updateEventMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={updateEventMutation.isPending || !editFormData.title.trim()}
+                className="bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white"
+              >
+                {updateEventMutation.isPending ? 'Saving Changes...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ── Delete Event Confirmation Modal (Organisers & SuperAdmin) ── */}
+      {isOrganiser && isDeleteModalOpen && (
+        <Modal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          title={t('eventDetails.deleteConfirmTitle', 'Delete Corporate Event')}
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-4 bg-red-950/40 border border-red-800/60 rounded-2xl text-red-200 text-xs">
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-red-300">Permanent Action Warning</p>
+                <p>
+                  {t(
+                    'eventDetails.deleteConfirmMessage',
+                    'Are you sure you want to delete this event? This action cannot be undone and will remove all registrations and sessions associated with it.'
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-[var(--surface-950)] border border-[var(--border-default)] rounded-xl text-xs space-y-1">
+              <p className="text-[var(--text-muted)] uppercase tracking-wider text-[10px] font-bold">Event to delete:</p>
+              <p className="font-bold text-[var(--text-primary)]">{event.title || 'Untitled Event'}</p>
+              <p className="text-[var(--text-secondary)]">{formatDate(event.date)} · ID #{event.idEvent || id}</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDeleteModalOpen(false)}
+                disabled={deleteEventMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => deleteEventMutation.mutate()}
+                disabled={deleteEventMutation.isPending}
+                className="bg-red-600 hover:bg-red-500 text-white font-bold"
+              >
+                {deleteEventMutation.isPending ? 'Deleting Event...' : 'Delete Event'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
     </div>
   );
 };
 
 export default EventDetailsPage;
+

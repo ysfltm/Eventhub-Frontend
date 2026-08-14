@@ -1,4 +1,4 @@
-﻿export const fr = {
+export const fr = {
   nav: {
     workspace: 'Espace de travail',
     management: 'Administration',
@@ -157,6 +157,11 @@
     noEventsPublished: 'Aucun evenement publie',
     noEventsPublishedDesc: 'Les evenements publies apparaitront ici.',
     claiming: 'En cours...',
+    eventFull: 'Evenement complet',
+    eventPassed: 'Evenement passe',
+    capacity: 'Capacite',
+    spotsTaken: 'places prises',
+    spotsRemaining: 'places restantes',
   },
   eventDetails: {
     backToDirectory: 'Retour au repertoire',
@@ -185,6 +190,19 @@
     loadingEvent: 'Chargement des details...',
     eventNotFound: 'Evenement introuvable',
     failedToLoad: 'Echec du chargement des details.',
+    capacity: 'Capacite des participants',
+    spotsTaken: 'places prises',
+    spotsRemaining: 'places restantes',
+    eventFull: 'Evenement complet',
+    eventPassed: 'Evenement passe',
+    eventFullNotice: 'Cet evenement a atteint sa capacite maximale de participants.',
+    eventPassedNotice: 'Cet evenement est deja passe et les inscriptions sont fermees.',
+    editEvent: 'Modifier l evenement',
+    deleteEvent: 'Supprimer l evenement',
+    deleteConfirmTitle: 'Supprimer l evenement',
+    deleteConfirmMessage: 'Etes-vous sur de vouloir supprimer cet evenement ? Cette action est irreversible.',
+    eventUpdated: 'Evenement mis a jour avec succes !',
+    eventDeleted: 'Evenement supprime avec succes.',
   },
   createEvent: {
     title: 'Publier une nouvelle session',
@@ -199,6 +217,8 @@
     eventDate: 'Date de l evenement *',
     startTime: 'Heure de debut *',
     endTime: 'Heure de fin *',
+    capacity: 'Capacite maximale de participants *',
+    capacityPlaceholder: 'ex. 100',
     location: 'Lieu / Adresse',
     livePreview: 'Apercu en direct',
     previewTag: 'Pret a publier',

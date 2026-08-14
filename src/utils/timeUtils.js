@@ -45,3 +45,49 @@ export const TIME_OPTIONS_24H = Array.from({ length: 48 }, (_, i) => {
   const minutes = i % 2 === 0 ? '00' : '30';
   return `${hours}:${minutes}`;
 });
+
+/**
+ * Checks if an event's date and start time is in the past.
+ * @param {string|Date} dateStr - The ISO date string or Date object.
+ * @param {string} startTimeStr - The start time string (e.g. "09:00", "09:00:00").
+ * @returns {boolean} true if the event date + start time has already passed.
+ */
+export const isEventPassed = (dateStr, startTimeStr) => {
+  if (!dateStr) return false;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+
+    if (startTimeStr) {
+      const cleanTime = String(startTimeStr).trim();
+      const parts = cleanTime.split(':');
+      if (parts.length >= 2) {
+        const hours = parseInt(parts[0], 10) || 0;
+        const minutes = parseInt(parts[1], 10) || 0;
+        d.setHours(hours, minutes, 0, 0);
+      }
+    } else {
+      d.setHours(23, 59, 59, 999);
+    }
+    return d.getTime() < Date.now();
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Formats any date string/ISO date into "YYYY-MM-DD" suitable for HTML5 date inputs.
+ * @param {string|Date} dateStr 
+ * @returns {string} Formatted "YYYY-MM-DD" string or empty string
+ */
+export const formatDateForInput = (dateStr) => {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString().split('T')[0];
+  } catch {
+    return '';
+  }
+};
+

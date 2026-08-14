@@ -12,6 +12,7 @@ import {
   Eye,
   CheckCircle2,
   ChevronRight,
+  Users,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../api/axiosClient';
@@ -41,6 +42,7 @@ const CreateEventPage = () => {
     endTime: '18:00',
     address: '',
     person: '',
+    capacity: 100,
   });
 
   // Fetch companies for dropdown
@@ -64,6 +66,7 @@ const CreateEventPage = () => {
 
   const createEventMutation = useMutation({
     mutationFn: async (data) => {
+      const parsedCapacity = parseInt(data.capacity, 10) > 0 ? parseInt(data.capacity, 10) : 100;
       const payload = {
         title: data.title,
         Title: data.title,
@@ -81,6 +84,8 @@ const CreateEventPage = () => {
         Address: data.address,
         person: data.person || null,
         Person: data.person || null,
+        capacity: parsedCapacity,
+        Capacity: parsedCapacity,
       };
       const res = await axiosClient.post(ENDPOINTS.EVENT.BASE, payload);
       return res.data;
@@ -111,7 +116,7 @@ const CreateEventPage = () => {
       addNotification({
         type: 'event_published',
         title: 'New Event Published! 📢',
-        message: `"${formData.title}" has been published successfully.`,
+        message: `"${formData.title}" has been published successfully with capacity for ${formData.capacity} attendees.`,
         link: newEvId ? `/events/${newEvId}` : '/events',
       });
       navigate('/events', { state: { message: 'Event published successfully!' } });
@@ -119,7 +124,11 @@ const CreateEventPage = () => {
   });
 
   const handleChange = (e) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === 'capacity' ? (value === '' ? '' : parseInt(value, 10) || 0) : value,
+    }));
   };
 
   const handleSubmit = (e) => {
@@ -257,14 +266,14 @@ const CreateEventPage = () => {
 
             <div className="border-t border-[var(--border-subtle)]" />
 
-            {/* Step 2: Date, Time & Location */}
+            {/* Step 2: Date, Time, Capacity & Location */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-[var(--cst-red-400)] text-xs font-bold uppercase tracking-widest">
                 <Calendar className="w-4 h-4" />
-                <span>2. Date, Time &amp; Venue</span>
+                <span>2. Date, Time, Capacity &amp; Venue</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className={FIELD_LABEL}>Event Date *</label>
                   <input
@@ -317,6 +326,25 @@ const CreateEventPage = () => {
                       ))}
                     </select>
                     <Clock className="w-4 h-4 text-[var(--text-muted)] absolute right-3.5 top-3 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={FIELD_LABEL}>Max Capacity *</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      name="capacity"
+                      min="1"
+                      step="1"
+                      value={formData.capacity}
+                      onChange={handleChange}
+                      required
+                      disabled={createEventMutation.isPending}
+                      placeholder="e.g. 100"
+                      className={`${FIELD_INPUT} pr-10`}
+                    />
+                    <Users className="w-4 h-4 text-[var(--text-muted)] absolute right-3.5 top-3 pointer-events-none" />
                   </div>
                 </div>
               </div>
@@ -389,6 +417,12 @@ const CreateEventPage = () => {
                 <Clock className="w-3.5 h-3.5 text-[var(--cst-blue-400)] shrink-0" />
                 <span>
                   {formatDatePreview(formData.date)} · {formData.startTime} - {formData.endTime}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Users className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>
+                  0 / {formData.capacity || 100} Spots Taken ({(formData.capacity || 100)} available)
                 </span>
               </div>
               <div className="flex items-center gap-2">

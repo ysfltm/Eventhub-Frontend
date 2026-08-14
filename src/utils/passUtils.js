@@ -302,6 +302,7 @@ export const fetchMyPasses = async (user) => {
   }
 
   let foundPasses = [];
+  let serverFetched = false;
 
   // 1. Primary endpoint: GET /api/Participation/my-passes
   try {
@@ -311,17 +312,15 @@ export const fetchMyPasses = async (user) => {
       : (res.data?.data || res.data?.$values || null);
 
     if (Array.isArray(rawList)) {
-      const filtered = rawList.filter((p) => isUserMatch(p, user, true));
-      if (filtered.length > 0) {
-        foundPasses = filtered;
-      }
+      serverFetched = true;
+      foundPasses = rawList.filter((p) => isUserMatch(p, user, true));
     }
   } catch (e1) {
     console.warn('GET /api/Participation/my-passes failed, trying fallback endpoints:', e1?.response?.status);
   }
 
   // 2. Secondary fallback: GET /api/Participation/person/{personId}
-  if (foundPasses.length === 0) {
+  if (!serverFetched) {
     const personId = user?.idPerson || user?.id;
     if (personId && !isNaN(parseInt(personId, 10))) {
       try {
@@ -331,10 +330,8 @@ export const fetchMyPasses = async (user) => {
           : (res.data?.data || res.data?.$values || null);
 
         if (Array.isArray(rawList)) {
-          const filtered = rawList.filter((p) => isUserMatch(p, user, true));
-          if (filtered.length > 0) {
-            foundPasses = filtered;
-          }
+          serverFetched = true;
+          foundPasses = rawList.filter((p) => isUserMatch(p, user, true));
         }
       } catch (e2) {
         console.warn(`GET /api/Participation/person/${personId} failed:`, e2?.response?.status);
@@ -343,13 +340,14 @@ export const fetchMyPasses = async (user) => {
   }
 
   // 3. Base fallback: GET /api/Participation
-  if (foundPasses.length === 0) {
+  if (!serverFetched) {
     try {
       const res = await axiosClient.get(ENDPOINTS.PARTICIPATION.BASE);
       const list = Array.isArray(res.data)
         ? res.data
         : (res.data?.data || res.data?.$values || []);
       if (Array.isArray(list)) {
+        serverFetched = true;
         foundPasses = list.filter((p) => isUserMatch(p, user, false));
       }
     } catch (e3) {
@@ -357,26 +355,27 @@ export const fetchMyPasses = async (user) => {
     }
   }
 
-  // 4. Merge with locally saved claimed passes for this user
-  const localPasses = getLocalClaimedPasses(user);
-  const mergedMap = new Map();
-
-  foundPasses.forEach((p) => {
-    const evId = extractEventId(p);
-    if (evId) mergedMap.set(String(evId), p);
-  });
-
-  localPasses.forEach((p) => {
-    const evId = extractEventId(p);
-    if (evId && !mergedMap.has(String(evId))) {
-      mergedMap.set(String(evId), p);
+  // 4. If server responded successfully, sync local storage to match authoritative server state
+  if (serverFetched) {
+    try {
+      const key = getStorageKey(user);
+      localStorage.setItem(key, JSON.stringify(foundPasses));
+    } catch {
+      // Ignore
     }
-  });
-
-  const mergedList = Array.from(mergedMap.values());
+  } else {
+    // Only fall back to local storage if all network endpoints failed
+    const localPasses = getLocalClaimedPasses(user);
+    const mergedMap = new Map();
+    localPasses.forEach((p) => {
+      const evId = extractEventId(p);
+      if (evId) mergedMap.set(String(evId), p);
+    });
+    foundPasses = Array.from(mergedMap.values());
+  }
 
   // 5. Enrich passes with event details if event object is missing
-  return await enrichPassesWithEvents(mergedList);
+  return await enrichPassesWithEvents(foundPasses);
 };
 
 /**
@@ -384,17 +383,27 @@ export const fetchMyPasses = async (user) => {
  * 1. DELETE /api/Participation/cancel/{eventId}
  * 2. DELETE /api/Participation/{participationId}
  */
-export const cancelParticipation = async (eventId, participationId = null) => {
+export const cancelParticipation = async (eventId, participationId = null, user = null) => {
   let cancelError = null;
+
+  // Always purge from local storage immediately
+  if (user && eventId) {
+    removeLocalClaimedPass(eventId, user);
+  }
 
   // 1. Primary: DELETE /api/Participation/cancel/{eventId}
   if (eventId) {
     try {
       const res = await axiosClient.delete(ENDPOINTS.PARTICIPATION.CANCEL(eventId));
+      if (user) removeLocalClaimedPass(eventId, user);
       return res.data;
     } catch (err) {
       cancelError = err;
       console.warn(`DELETE /api/Participation/cancel/${eventId} failed:`, err?.response?.status, err?.response?.data);
+      // If 404/400 (already cancelled or not found), treat as locally resolved
+      if (err?.response?.status === 404 || err?.response?.status === 400) {
+        if (user) removeLocalClaimedPass(eventId, user);
+      }
     }
   }
 
@@ -402,14 +411,22 @@ export const cancelParticipation = async (eventId, participationId = null) => {
   if (participationId) {
     try {
       const res = await axiosClient.delete(ENDPOINTS.PARTICIPATION.BY_ID(participationId));
+      if (user && eventId) removeLocalClaimedPass(eventId, user);
       return res.data;
     } catch (err) {
       if (!cancelError) cancelError = err;
       console.warn(`DELETE /api/Participation/${participationId} failed:`, err?.response?.status, err?.response?.data);
+      if (err?.response?.status === 404 || err?.response?.status === 400) {
+        if (user && eventId) removeLocalClaimedPass(eventId, user);
+      }
     }
   }
 
-  throw cancelError || new Error('Failed to cancel event participation.');
+  if (cancelError && cancelError?.response?.status !== 404) {
+    throw cancelError;
+  }
+
+  return { success: true, message: 'Registration cancelled successfully.' };
 };
 
 /**

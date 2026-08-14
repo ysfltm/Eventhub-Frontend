@@ -1,4 +1,4 @@
-﻿export const en = {
+export const en = {
   nav: {
     workspace: 'Workspace',
     management: 'Management',
@@ -157,6 +157,11 @@
     noEventsPublished: 'No events published yet',
     noEventsPublishedDesc: 'Events published in the management console will appear here.',
     claiming: 'Claiming...',
+    eventFull: 'Event Full',
+    eventPassed: 'Event Passed',
+    capacity: 'Capacity',
+    spotsTaken: 'spots taken',
+    spotsRemaining: 'spots remaining',
   },
   eventDetails: {
     backToDirectory: 'Back to Directory',
@@ -185,6 +190,19 @@
     loadingEvent: 'Loading event details...',
     eventNotFound: 'Event not found',
     failedToLoad: 'Failed to load event details.',
+    capacity: 'Attendee Capacity',
+    spotsTaken: 'spots taken',
+    spotsRemaining: 'spots remaining',
+    eventFull: 'Event Full',
+    eventPassed: 'Event Passed',
+    eventFullNotice: 'This event has reached full attendee capacity.',
+    eventPassedNotice: 'This event has already taken place and is closed for registration.',
+    editEvent: 'Edit Event',
+    deleteEvent: 'Delete Event',
+    deleteConfirmTitle: 'Delete Corporate Event',
+    deleteConfirmMessage: 'Are you sure you want to delete this event? This action cannot be undone.',
+    eventUpdated: 'Event updated successfully!',
+    eventDeleted: 'Event deleted successfully.',
   },
   createEvent: {
     title: 'Publish New Session',
@@ -199,6 +217,8 @@
     eventDate: 'Event Date *',
     startTime: 'Start Time *',
     endTime: 'End Time *',
+    capacity: 'Maximum Attendee Capacity *',
+    capacityPlaceholder: 'e.g., 100',
     location: 'Location / Address',
     livePreview: 'Live Session Card Preview',
     previewTag: 'Ready to Publish',

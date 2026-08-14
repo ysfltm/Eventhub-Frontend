@@ -1,6 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar, MapPin, Clock, Building2, Plus, Search, Ticket, Check, X, Sparkles, XCircle, Info } from 'lucide-react';
+import { Calendar, MapPin, Clock, Building2, Plus, Search, Ticket, Check, X, Sparkles, XCircle, Info, Users } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
 import { AuthContext } from '../../context/AuthContext';
@@ -14,9 +14,9 @@ import { TiltCard } from '../../components/ui/TiltCard';
 import { MagneticIcon } from '../../components/ui/MagneticIcon';
 import { AddressMapTrigger } from '../../components/maps/AddressMapTrigger';
 import { useNavigate, Link } from 'react-router-dom';
-import { to24HourTimeSpan, TIME_OPTIONS_24H } from '../../utils/timeUtils';
+import { to24HourTimeSpan, TIME_OPTIONS_24H, isEventPassed } from '../../utils/timeUtils';
 import { useLanguage } from '../../context/LanguageContext';
-import { fetchMyPasses, extractEventId, cancelParticipation, saveLocalClaimedPass } from '../../utils/passUtils';
+import { fetchMyPasses, extractEventId, cancelParticipation, saveLocalClaimedPass, removeLocalClaimedPass } from '../../utils/passUtils';
 
 const EventsPage = () => {
   const { user, isOrganiser, isSuperAdmin } = useContext(AuthContext);
@@ -37,6 +37,7 @@ const EventsPage = () => {
     startTime: '',
     endTime: '',
     address: '',
+    capacity: 100,
   });
   const [formError, setFormError] = useState('');
 
@@ -58,6 +59,38 @@ const EventsPage = () => {
     : Array.isArray(rawEventsData?.$values)
     ? rawEventsData.$values
     : [];
+
+  // Fetch participations for all listed events using the reliable /Participation/event/{id} endpoint
+  const { data: attendeeCountsMap = {} } = useQuery({
+    queryKey: ['allEventAttendeeCounts', eventsList.map((e) => extractEventId(e) || e.idEvent || e.id).join(',')],
+    queryFn: async () => {
+      const ids = eventsList
+        .map((e) => extractEventId(e) || e.idEvent || e.IdEvent || e.id || e.Id)
+        .filter(Boolean);
+
+      if (ids.length === 0) return {};
+
+      const countMap = {};
+      const results = await Promise.allSettled(
+        ids.map(async (evId) => {
+          const res = await axiosClient.get(ENDPOINTS.PARTICIPATION.BY_EVENT(evId));
+          const list = Array.isArray(res.data)
+            ? res.data
+            : (res.data?.items || res.data?.$values || res.data?.data || []);
+          return { evId, count: list.length };
+        })
+      );
+
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value) {
+          countMap[r.value.evId] = r.value.count;
+        }
+      });
+
+      return countMap;
+    },
+    enabled: eventsList.length > 0,
+  });
 
   // Fetch companies dropdown
   const { data: rawCompaniesData = [], isLoading: companiesLoading } = useQuery({
@@ -98,14 +131,24 @@ const EventsPage = () => {
   // Mutation for creating event
   const createEventMutation = useMutation({
     mutationFn: async (eventData) => {
+      const parsedCapacity = parseInt(eventData.capacity, 10) > 0 ? parseInt(eventData.capacity, 10) : 100;
       const payload = {
         title: eventData.title,
+        Title: eventData.title,
         description: eventData.description,
+        Description: eventData.description,
         idCompany: parseInt(eventData.idCompany, 10),
+        IdCompany: parseInt(eventData.idCompany, 10),
         date: eventData.date ? new Date(eventData.date).toISOString() : new Date().toISOString(),
+        Date: eventData.date ? new Date(eventData.date).toISOString() : new Date().toISOString(),
         startTime: to24HourTimeSpan(eventData.startTime),
+        StartTime: to24HourTimeSpan(eventData.startTime),
         endTime: to24HourTimeSpan(eventData.endTime),
+        EndTime: to24HourTimeSpan(eventData.endTime),
         address: eventData.address,
+        Address: eventData.address,
+        capacity: parsedCapacity,
+        Capacity: parsedCapacity,
       };
       const response = await axiosClient.post(ENDPOINTS.EVENT.BASE, payload);
       return response.data;
@@ -121,6 +164,7 @@ const EventsPage = () => {
         startTime: '',
         endTime: '',
         address: '',
+        capacity: 100,
       });
       setFormError('');
     },
@@ -165,6 +209,8 @@ const EventsPage = () => {
       saveLocalClaimedPass(data, idEvent, user);
       queryClient.invalidateQueries({ queryKey: ['myPasses'] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['allEventAttendeeCounts'] });
+      queryClient.invalidateQueries({ queryKey: ['allParticipations'] });
       setPassClaimedEventId(idEvent);
       setTimeout(() => setPassClaimedEventId(null), 3000);
     },
@@ -202,10 +248,11 @@ const EventsPage = () => {
 
   const cancelMutation = useMutation({
     mutationFn: async ({ eventId, participationId }) => {
-      return await cancelParticipation(eventId, participationId);
+      return await cancelParticipation(eventId, participationId, user);
     },
     onSuccess: (data, variables) => {
       const targetEvtId = variables?.eventId;
+      removeLocalClaimedPass(targetEvtId, user);
 
       // Instantly update local passes cache for optimistic UI responsiveness
       queryClient.setQueriesData({ queryKey: ['myPasses'] }, (oldData) => {
@@ -216,10 +263,20 @@ const EventsPage = () => {
 
       queryClient.invalidateQueries({ queryKey: ['myPasses'] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['allEventAttendeeCounts'] });
+      queryClient.invalidateQueries({ queryKey: ['allParticipations'] });
 
       alert(data?.message || 'Successfully cancelled event registration.');
     },
-    onError: (err) => {
+    onError: (err, variables) => {
+      const targetEvtId = variables?.eventId;
+      if (err.response?.status === 404 || err.response?.status === 400) {
+        removeLocalClaimedPass(targetEvtId, user);
+        queryClient.invalidateQueries({ queryKey: ['myPasses'] });
+        queryClient.invalidateQueries({ queryKey: ['events'] });
+        queryClient.invalidateQueries({ queryKey: ['allEventAttendeeCounts'] });
+        queryClient.invalidateQueries({ queryKey: ['allParticipations'] });
+      }
       console.error('Cancel registration error:', err);
       const serverMsg = typeof err.response?.data === 'string'
         ? err.response.data
@@ -385,7 +442,7 @@ const EventsPage = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="date">Event Date</Label>
                     <Input
@@ -433,6 +490,21 @@ const EventsPage = () => {
                         </option>
                       ))}
                     </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="capacity">Max Capacity</Label>
+                    <Input
+                      id="capacity"
+                      name="capacity"
+                      type="number"
+                      min="1"
+                      placeholder="100"
+                      value={formData.capacity}
+                      onChange={handleInputChange}
+                      required
+                      disabled={createEventMutation.isPending}
+                    />
                   </div>
                 </div>
 
@@ -506,7 +578,12 @@ const EventsPage = () => {
               const startTime = evt.startTime || evt.StartTime;
               const endTime = evt.endTime || evt.EndTime;
               const address = evt.address || evt.Address;
+              const rawCap = evt.capacity !== undefined && evt.capacity !== null ? evt.capacity : (evt.Capacity !== undefined && evt.Capacity !== null ? evt.Capacity : 100);
+              const capacity = parseInt(rawCap, 10);
+              const attendeesCount = attendeeCountsMap[evtId] || evt.attendeesCount || evt.attendeeCount || evt.participations?.length || 0;
+              const isFull = capacity === 0 || (capacity > 0 && attendeesCount >= capacity);
               const companyName = evt.companyName || evt.CompanyName || evt.company?.name || evt.company?.Name || (typeof evt.company === 'string' ? evt.company : null);
+              const isPassed = isEventPassed(date, startTime);
 
               return (
                 <TiltCard 
@@ -527,9 +604,20 @@ const EventsPage = () => {
                           {t('events.independentSession', 'Independent Session')}
                         </span>
                       )}
-                      <span className="text-[10px] font-mono text-[var(--text-muted)] bg-[var(--surface-800)] px-2 py-0.5 rounded-md border border-[var(--border-default)]">
-                        #{evtId}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {isPassed ? (
+                          <span className="text-[10px] font-bold text-amber-400 bg-amber-950/50 border border-amber-800/40 px-2 py-0.5 rounded-md">
+                            {t('events.eventPassed', 'Event Passed')}
+                          </span>
+                        ) : isFull ? (
+                          <span className="text-[10px] font-bold text-rose-400 bg-rose-950/50 border border-rose-800/40 px-2 py-0.5 rounded-md">
+                            {t('events.eventFull', 'Event Full')}
+                          </span>
+                        ) : null}
+                        <span className="text-[10px] font-mono text-[var(--text-muted)] bg-[var(--surface-800)] px-2 py-0.5 rounded-md border border-[var(--border-default)]">
+                          #{evtId}
+                        </span>
+                      </div>
                     </div>
 
                     <Link to={`/events/${evtId}`}>
@@ -554,6 +642,14 @@ const EventsPage = () => {
                           <Clock className="h-4 w-4 text-[var(--cst-blue-400)] shrink-0 transition-transform group-hover:-rotate-6" />
                         </MagneticIcon>
                         <span>{formatTime(startTime)} - {formatTime(endTime)}</span>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <MagneticIcon maxShift={10} scaleOnHover={1.15}>
+                          <Users className={`h-4 w-4 shrink-0 transition-transform group-hover:scale-110 ${isFull ? 'text-rose-400' : 'text-emerald-400'}`} />
+                        </MagneticIcon>
+                        <span className={`text-xs ${isFull ? 'text-rose-400 font-semibold' : 'text-[var(--text-secondary)]'}`}>
+                          {attendeesCount} / {capacity} {t('events.spotsTaken', 'spots taken')} {isFull ? `(${t('events.eventFull', 'Full')})` : ''}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2.5">
                         <MagneticIcon maxShift={10} scaleOnHover={1.15}>
@@ -613,6 +709,50 @@ const EventsPage = () => {
                           ) : (
                             <XCircle className="w-4 h-4 text-red-400" />
                           )}
+                        </Button>
+                      </div>
+                    ) : isPassed ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <Button
+                          disabled
+                          className="flex-1 bg-slate-800/60 text-slate-400 font-bold text-xs py-2.5 rounded-2xl border border-slate-700/50 cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          <Clock className="w-4 h-4 text-slate-500" />
+                          <span>{t('events.eventPassed', 'Event Passed')}</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/events/${evtId}`);
+                          }}
+                          className="cst-btn-motion text-xs text-sky-400 border-sky-800/40 hover:bg-sky-950/40 p-2.5 rounded-2xl shrink-0 cursor-pointer"
+                          title="View Session Details"
+                        >
+                          <Info className="w-4 h-4 text-sky-400" />
+                        </Button>
+                      </div>
+                    ) : isFull ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <Button
+                          disabled
+                          className="flex-1 bg-rose-950/40 text-rose-400 font-bold text-xs py-2.5 rounded-2xl border border-rose-800/40 cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          <Users className="w-4 h-4 text-rose-400" />
+                          <span>{t('events.eventFull', 'Event Full')}</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/events/${evtId}`);
+                          }}
+                          className="cst-btn-motion text-xs text-sky-400 border-sky-800/40 hover:bg-sky-950/40 p-2.5 rounded-2xl shrink-0 cursor-pointer"
+                          title="View Session Details"
+                        >
+                          <Info className="w-4 h-4 text-sky-400" />
                         </Button>
                       </div>
                     ) : (
