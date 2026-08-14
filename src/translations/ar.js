@@ -449,4 +449,13 @@ export const ar = {
     invited: 'مدعو',
     presentAtVenue: 'قدم هذا التصريح عند مدخل المكان للمسح',
   },
+  calendar: {
+    addToCalendar: 'إضافة إلى التقويم',
+    chooseProvider: 'اختر مزود التقويم',
+    google: 'تقويم Google',
+    appleIcs: 'تقويم Apple / ملف iCal (.ics)',
+    outlook: 'Outlook و Office 365',
+    yahoo: 'تقويم Yahoo',
+    downloadSuccess: 'تم تنزيل دعوة التقويم (.ics)',
+  },
 };

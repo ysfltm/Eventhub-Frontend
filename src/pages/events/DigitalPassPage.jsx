@@ -20,6 +20,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Alert } from '../../components/ui/Alert';
 import { fetchMyPasses } from '../../utils/passUtils';
+import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
 
 const QRCodeDisplay = ({ value, size = 180 }) => {
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}&color=020617&bgcolor=ffffff`;
@@ -149,7 +150,7 @@ const DigitalPassPage = () => {
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-12">
       {/* Top Header Actions */}
-      <div className="flex items-center justify-between no-print cst-stagger-1">
+      <div className="flex flex-wrap items-center justify-between no-print cst-stagger-1 gap-2">
         <Link
           to="/passes"
           className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors group"
@@ -157,9 +158,12 @@ const DigitalPassPage = () => {
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
           Back to All Passes
         </Link>
-        <Button onClick={handlePrint} size="sm" variant="outline" className="text-xs">
-          <Printer className="w-3.5 h-3.5 mr-1.5" /> Print Ticket / PDF
-        </Button>
+        <div className="flex items-center gap-2">
+          <AddToCalendarDropdown event={event} />
+          <Button onClick={handlePrint} size="sm" variant="outline" className="text-xs cursor-pointer">
+            <Printer className="w-3.5 h-3.5 mr-1.5" /> Print Ticket / PDF
+          </Button>
+        </div>
       </div>
 
       {/* Printable Digital Pass Container */}

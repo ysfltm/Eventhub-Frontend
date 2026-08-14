@@ -449,4 +449,13 @@ export const fr = {
     invited: 'Invite',
     presentAtVenue: 'Presentez ce billet a l entree pour le scan',
   },
+  calendar: {
+    addToCalendar: 'Ajouter au calendrier',
+    chooseProvider: 'Choisir le calendrier',
+    google: 'Google Agenda',
+    appleIcs: 'Apple Calendrier / iCal (.ics)',
+    outlook: 'Outlook et Office 365',
+    yahoo: 'Yahoo Calendrier',
+    downloadSuccess: 'Invitation de calendrier telechargee (.ics)',
+  },
 };

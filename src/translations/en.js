@@ -449,4 +449,13 @@ export const en = {
     invited: 'Invited',
     presentAtVenue: 'Present this pass at the venue entrance for scanning',
   },
+  calendar: {
+    addToCalendar: 'Add to Calendar',
+    chooseProvider: 'Choose Calendar Provider',
+    google: 'Google Calendar',
+    appleIcs: 'Apple Calendar / iCal (.ics)',
+    outlook: 'Outlook & Office 365',
+    yahoo: 'Yahoo Calendar',
+    downloadSuccess: 'Calendar invitation downloaded (.ics)',
+  },
 };

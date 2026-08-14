@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Alert } from '../../components/ui/Alert';
 import { fetchMyPasses } from '../../utils/passUtils';
 import { useLanguage } from '../../context/LanguageContext';
+import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
 
 /**
  * High-Contrast Centered QR Code Generator Component
@@ -228,16 +229,19 @@ const MyPassesPage = () => {
                     </div>
                   </div>
 
-                  <div className="pt-2 flex justify-between items-center text-xs text-slate-400">
+                  <div className="pt-2 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-400 border-t border-slate-800/60">
                     <span>{t('passes.holder', 'Holder:')} <strong className="text-slate-200">{user?.email}</strong></span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedPass(pass)}
-                      className="text-xs text-indigo-400"
-                    >
-                      {t('passes.fullTicket', 'Full Ticket')}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <AddToCalendarDropdown event={event} />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedPass(pass)}
+                        className="text-xs text-indigo-400 cursor-pointer"
+                      >
+                        {t('passes.fullTicket', 'Full Ticket')}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -252,7 +256,7 @@ const MyPassesPage = () => {
           <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6 text-center">
             <div className="flex justify-between items-center border-b border-slate-800 pb-4">
               <span className="text-xs font-bold uppercase tracking-widest text-indigo-400">{t('passes.eventPass', 'EventHub Pass')}</span>
-              <button onClick={() => setSelectedPass(null)} className="text-slate-400 hover:text-slate-200">
+              <button onClick={() => setSelectedPass(null)} className="text-slate-400 hover:text-slate-200 cursor-pointer">
                 ✕
               </button>
             </div>
@@ -273,9 +277,12 @@ const MyPassesPage = () => {
               <p className="text-xs text-slate-400">{selectedPass.event?.address}</p>
             </div>
 
-            <Button onClick={() => setSelectedPass(null)} className="w-full">
-              {t('passes.closeTicket', 'Close Full Ticket')}
-            </Button>
+            <div className="space-y-2">
+              <AddToCalendarDropdown event={selectedPass.event} className="w-full [&>button]:w-full" />
+              <Button onClick={() => setSelectedPass(null)} variant="outline" className="w-full cursor-pointer">
+                {t('passes.closeTicket', 'Close Full Ticket')}
+              </Button>
+            </div>
           </div>
         </div>
       )}

@@ -37,6 +37,7 @@ import { fetchMyPasses, extractEventId, cancelParticipation, saveLocalClaimedPas
 import { getRoleStyle } from '../../utils/roleUtils';
 import { isEventPassed, formatDateForInput, to24HourTimeSpan, TIME_OPTIONS_24H } from '../../utils/timeUtils';
 import { useLanguage } from '../../context/LanguageContext';
+import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
 
 const FIELD_INPUT =
   'w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-2xl text-xs font-medium text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--cst-blue-600)] focus:ring-2 focus:ring-[var(--cst-blue-600)]/20 transition-all';
@@ -678,6 +679,8 @@ const EventDetailsPage = () => {
                 </Button>
               </Link>
             )}
+
+            <AddToCalendarDropdown event={event} className="w-full [&>button]:w-full" />
           </div>
         </div>
       </Card>
