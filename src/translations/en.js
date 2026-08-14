@@ -458,4 +458,15 @@ export const en = {
     yahoo: 'Yahoo Calendar',
     downloadSuccess: 'Calendar invitation downloaded (.ics)',
   },
+  certificate: {
+    modalTitle: 'Verified Certificate of Attendance',
+    certificateTitle: 'CERTIFICATE OF ATTENDANCE',
+    certifiesThat: 'This official document certifies that',
+    participationStatement: 'has successfully registered, attended, and verified participation in the executive corporate session',
+    viewCertificate: 'Official Certificate',
+    downloadCertificate: 'Download Certificate',
+    printPdf: 'Print / Save as PDF',
+    verifiedAttendance: 'Verified Attendance',
+    onlyCheckedInNotice: 'Certificate becomes available after live door check-in verification.',
+  },
 };

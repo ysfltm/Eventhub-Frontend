@@ -458,4 +458,15 @@ export const ar = {
     yahoo: 'تقويم Yahoo',
     downloadSuccess: 'تم تنزيل دعوة التقويم (.ics)',
   },
+  certificate: {
+    modalTitle: 'شهادة حضور معتمدة',
+    certificateTitle: 'شهادة حضور ومشاركة',
+    certifiesThat: 'تشهد هذه الوثيقة الرسمية بأن',
+    participationStatement: 'قد أتم التسجيل وحضر وشارك بنجاح في الجلسة المؤسسية',
+    viewCertificate: 'الشهادة الرسمية',
+    downloadCertificate: 'تحميل الشهادة',
+    printPdf: 'طباعة / حفظ كملف PDF',
+    verifiedAttendance: 'حضور معتمد',
+    onlyCheckedInNotice: 'تتاح الشهادة بعد إتمام تسجيل الدخول عند المدخل.',
+  },
 };

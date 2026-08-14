@@ -38,6 +38,8 @@ import { getRoleStyle } from '../../utils/roleUtils';
 import { isEventPassed, formatDateForInput, to24HourTimeSpan, TIME_OPTIONS_24H } from '../../utils/timeUtils';
 import { useLanguage } from '../../context/LanguageContext';
 import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
+import { CertificateModal } from '../../components/events/CertificateModal';
+import { Award } from 'lucide-react';
 
 const FIELD_INPUT =
   'w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-2xl text-xs font-medium text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--cst-blue-600)] focus:ring-2 focus:ring-[var(--cst-blue-600)]/20 transition-all';
@@ -79,6 +81,9 @@ const EventDetailsPage = () => {
 
   // Delete Event Modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
+  // Certificate Modal state
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
   // 1. Fetch Event details
   const {
@@ -610,6 +615,16 @@ const EventDetailsPage = () => {
                   <CheckCircle2 className="w-4 h-4 mr-2" />
                   View Entry Ticket
                 </Button>
+                {isCheckedIn && (
+                  <Button
+                    type="button"
+                    onClick={() => setIsCertModalOpen(true)}
+                    className="w-full text-xs font-bold bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 border border-amber-500/40 shadow-sm cursor-pointer flex items-center justify-center gap-2 py-2"
+                  >
+                    <Award className="w-4 h-4 text-amber-400" />
+                    <span>{t('certificate.viewCertificate', 'Official Certificate')}</span>
+                  </Button>
+                )}
                 <Button
                   onClick={() => {
                     if (confirm(`Are you sure you want to cancel registration for '${event.title}'?`)) {
@@ -1230,6 +1245,15 @@ const EventDetailsPage = () => {
           </div>
         </Modal>
       )}
+
+      {/* Official Certificate of Attendance Modal */}
+      <CertificateModal
+        isOpen={isCertModalOpen}
+        onClose={() => setIsCertModalOpen(false)}
+        event={event}
+        user={user}
+        pass={existingPass}
+      />
 
     </div>
   );

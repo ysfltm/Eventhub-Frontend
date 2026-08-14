@@ -9,6 +9,8 @@ import { Alert } from '../../components/ui/Alert';
 import { fetchMyPasses } from '../../utils/passUtils';
 import { useLanguage } from '../../context/LanguageContext';
 import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
+import { CertificateModal } from '../../components/events/CertificateModal';
+import { Award } from 'lucide-react';
 
 /**
  * High-Contrast Centered QR Code Generator Component
@@ -36,6 +38,7 @@ const MyPassesPage = () => {
   const { t } = useLanguage();
   const [copiedId, setCopiedId] = useState(null);
   const [selectedPass, setSelectedPass] = useState(null);
+  const [certPass, setCertPass] = useState(null);
 
   const { data: passes = [], isLoading, error } = useQuery({
     queryKey: ['myPasses', user?.idPerson || user?.id || user?.email],
@@ -231,7 +234,17 @@ const MyPassesPage = () => {
 
                   <div className="pt-2 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-400 border-t border-slate-800/60">
                     <span>{t('passes.holder', 'Holder:')} <strong className="text-slate-200">{user?.email}</strong></span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(pass.checkInStatus || pass.checkInTime || pass.status === 'CheckedIn') && (
+                        <Button
+                          size="sm"
+                          onClick={() => setCertPass(pass)}
+                          className="text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 cursor-pointer flex items-center gap-1"
+                        >
+                          <Award className="w-3.5 h-3.5 text-amber-400" />
+                          <span>{t('certificate.viewCertificate', 'Certificate')}</span>
+                        </Button>
+                      )}
                       <AddToCalendarDropdown event={event} />
                       <Button
                         variant="ghost"
@@ -278,6 +291,19 @@ const MyPassesPage = () => {
             </div>
 
             <div className="space-y-2">
+              {(selectedPass.checkInStatus || selectedPass.checkInTime || selectedPass.status === 'CheckedIn') && (
+                <Button
+                  onClick={() => {
+                    const target = selectedPass;
+                    setSelectedPass(null);
+                    setCertPass(target);
+                  }}
+                  className="w-full text-xs font-bold bg-gradient-to-r from-amber-500/20 to-amber-600/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 cursor-pointer flex items-center justify-center gap-1.5 py-2.5"
+                >
+                  <Award className="w-4 h-4 text-amber-400" />
+                  <span>{t('certificate.viewCertificate', 'Official Certificate of Attendance')}</span>
+                </Button>
+              )}
               <AddToCalendarDropdown event={selectedPass.event} className="w-full [&>button]:w-full" />
               <Button onClick={() => setSelectedPass(null)} variant="outline" className="w-full cursor-pointer">
                 {t('passes.closeTicket', 'Close Full Ticket')}
@@ -286,6 +312,15 @@ const MyPassesPage = () => {
           </div>
         </div>
       )}
+
+      {/* Official Certificate of Attendance Modal */}
+      <CertificateModal
+        isOpen={Boolean(certPass)}
+        onClose={() => setCertPass(null)}
+        event={certPass?.event}
+        user={user}
+        pass={certPass}
+      />
     </div>
   );
 };

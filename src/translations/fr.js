@@ -458,4 +458,15 @@ export const fr = {
     yahoo: 'Yahoo Calendrier',
     downloadSuccess: 'Invitation de calendrier telechargee (.ics)',
   },
+  certificate: {
+    modalTitle: 'Certificat de participation verifie',
+    certificateTitle: 'CERTIFICAT DE PARTICIPATION',
+    certifiesThat: 'Ce document officiel atteste que',
+    participationStatement: 'a participe avec succes et valide sa presence a la session corporative',
+    viewCertificate: 'Certificat officiel',
+    downloadCertificate: 'Telecharger le certificat',
+    printPdf: 'Imprimer / Sauvegarder en PDF',
+    verifiedAttendance: 'Presence verifiee',
+    onlyCheckedInNotice: 'Le certificat devient disponible apres le controle d entree.',
+  },
 };

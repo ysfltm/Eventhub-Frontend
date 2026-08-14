@@ -1,4 +1,4 @@
-import React, { useContext, useRef } from 'react';
+import React, { useState, useContext, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -21,6 +21,8 @@ import { Card } from '../../components/ui/Card';
 import { Alert } from '../../components/ui/Alert';
 import { fetchMyPasses } from '../../utils/passUtils';
 import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
+import { CertificateModal } from '../../components/events/CertificateModal';
+import { Award } from 'lucide-react';
 
 const QRCodeDisplay = ({ value, size = 180 }) => {
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}&color=020617&bgcolor=ffffff`;
@@ -42,6 +44,7 @@ const DigitalPassPage = () => {
   const { id } = useParams();
   const { user } = useContext(AuthContext);
   const printRef = useRef(null);
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
   // Fetch user's passes to locate ticket by ID or GUID
   const {
@@ -158,7 +161,17 @@ const DigitalPassPage = () => {
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
           Back to All Passes
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {(pass.checkInStatus || pass.checkInTime || pass.status === 'CheckedIn') && (
+            <Button
+              onClick={() => setIsCertModalOpen(true)}
+              size="sm"
+              className="text-xs font-bold bg-gradient-to-r from-amber-500/20 to-amber-600/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 cursor-pointer flex items-center gap-1.5"
+            >
+              <Award className="w-3.5 h-3.5 text-amber-400" />
+              <span>{t('certificate.viewCertificate', 'Official Certificate')}</span>
+            </Button>
+          )}
           <AddToCalendarDropdown event={event} />
           <Button onClick={handlePrint} size="sm" variant="outline" className="text-xs cursor-pointer">
             <Printer className="w-3.5 h-3.5 mr-1.5" /> Print Ticket / PDF
@@ -276,6 +289,14 @@ const DigitalPassPage = () => {
           }
         }
       `}</style>
+      {/* Official Certificate of Attendance Modal */}
+      <CertificateModal
+        isOpen={isCertModalOpen}
+        onClose={() => setIsCertModalOpen(false)}
+        event={event}
+        user={user}
+        pass={pass}
+      />
     </div>
   );
 };
