@@ -38,6 +38,7 @@ import { Button } from '../../components/ui/Button';
 import { ALL_ROLES, getRoleStyle, normalizeRole, ROLES } from '../../utils/roleUtils';
 import { useLanguage } from '../../context/LanguageContext';
 import { checkPassDispatchStatus } from '../../utils/passUtils';
+import { AIFeedbackInsightsCard } from '../../components/analytics/AIFeedbackInsightsCard';
 
 // Default Color Palettes for charts
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1', '#94a3b8'];
@@ -611,6 +612,18 @@ const AnalyticsPage = () => {
           </div>
         </Card>
       </div>
+
+      {/* ── AI Executive Feedback & Sentiment Insights ────────────────────── */}
+      {(selectedEventId || events[0]?.idEvent || events[0]?.id) && (
+        <AIFeedbackInsightsCard
+          eventId={selectedEventId || events[0]?.idEvent || events[0]?.id}
+          eventTitle={
+            events.find((e) => String(e.idEvent || e.id) === String(selectedEventId))?.title ||
+            events[0]?.title ||
+            'Selected Event'
+          }
+        />
+      )}
 
       {/* ── Charts & Visualizations Grid ───────────────────────────────────── */}
       <div className="cst-stagger-3 grid grid-cols-1 lg:grid-cols-2 gap-8">

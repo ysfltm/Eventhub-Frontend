@@ -56,4 +56,10 @@ export const ENDPOINTS = {
     EVENT_SUMMARY: (eventId) => `/Feedback/event/${eventId}/summary`,
     BY_ID: (id) => `/Feedback/${id}`,
   },
+  // AI Engine (Gemini 1.5 Flash)
+  AI: {
+    GENERATE_EVENT_PLAN: '/AI/generate-event-plan',
+    FEEDBACK_INSIGHTS: (eventId) => `/AI/event/${eventId}/feedback-insights`,
+    CONCIERGE_CHAT: (eventId) => `/AI/event/${eventId}/chat`,
+  },
 };

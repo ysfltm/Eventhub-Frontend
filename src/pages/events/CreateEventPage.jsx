@@ -21,6 +21,8 @@ import { useNotification } from '../../context/NotificationContext';
 import { to24HourTimeSpan, TIME_OPTIONS_24H } from '../../utils/timeUtils';
 
 import { AddressLocationPicker } from '../../components/maps/AddressLocationPicker';
+import { AIEventGeneratorModal } from '../../components/events/AIEventGeneratorModal';
+import { Wand2 } from 'lucide-react';
 
 const FIELD_INPUT =
   'w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-2xl text-xs font-medium text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--cst-blue-600)] focus:ring-2 focus:ring-[var(--cst-blue-600)]/20 transition-all';
@@ -32,6 +34,7 @@ const CreateEventPage = () => {
   const queryClient = useQueryClient();
   const { addNotification } = useNotification();
 
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [programPdfFile, setProgramPdfFile] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
@@ -44,6 +47,23 @@ const CreateEventPage = () => {
     person: '',
     capacity: 100,
   });
+
+  const handleApplyAiData = (aiPlan) => {
+    setFormData((prev) => ({
+      ...prev,
+      title: aiPlan.title || prev.title,
+      description: aiPlan.description || prev.description,
+      address: aiPlan.address || prev.address,
+      capacity: aiPlan.capacity || prev.capacity,
+      startTime: aiPlan.startTime || prev.startTime,
+      endTime: aiPlan.endTime || prev.endTime,
+    }));
+    addNotification({
+      type: 'info',
+      title: 'AI Plan Applied! ✨',
+      message: `Populated event title, description, capacity (${aiPlan.capacity}), and venue address.`,
+    });
+  };
 
   // Fetch companies for dropdown
   const { data: rawCompaniesData = [], isLoading: companiesLoading } = useQuery({
@@ -163,15 +183,26 @@ const CreateEventPage = () => {
       </div>
 
       {/* Hero Studio Banner */}
-      <div className="cst-stagger-1 cst-hero-gradient p-6 md:p-8 rounded-3xl shadow-2xl border border-[var(--border-default)]">
-        <div className="flex items-center gap-2 text-[var(--cst-blue-400)] text-[10px] font-bold uppercase tracking-widest mb-1">
-          <Sparkles className="w-3.5 h-3.5 text-[var(--cst-blue-400)]" />
-          <span>Interactive Event Builder Studio</span>
+      <div className="cst-stagger-1 cst-hero-gradient p-6 md:p-8 rounded-3xl shadow-2xl border border-[var(--border-default)] flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <div className="flex items-center gap-2 text-[var(--cst-blue-400)] text-[10px] font-bold uppercase tracking-widest mb-1">
+            <Sparkles className="w-3.5 h-3.5 text-[var(--cst-blue-400)]" />
+            <span>Interactive Event Builder Studio</span>
+          </div>
+          <h1 className="text-3xl font-black tracking-tight text-[var(--text-primary)]">Publish Corporate Event</h1>
+          <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-xl">
+            Craft session details manually or let the Gemini AI Co-Pilot auto-draft your complete description, hourly tracks, and capacity.
+          </p>
         </div>
-        <h1 className="text-3xl font-black tracking-tight text-[var(--text-primary)]">Publish Corporate Event</h1>
-        <p className="text-xs text-[var(--text-secondary)] mt-1">
-          Craft session details on the left and see your live interactive event card render instantly on the right.
-        </p>
+
+        <button
+          type="button"
+          onClick={() => setIsAiModalOpen(true)}
+          className="cst-btn-motion flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-r from-[var(--cst-blue-700)] via-indigo-600 to-purple-600 hover:from-[var(--cst-blue-600)] hover:to-purple-500 text-white font-bold text-xs shadow-xl shadow-blue-600/30 border border-blue-400/30 cursor-pointer shrink-0"
+        >
+          <Wand2 className="w-4 h-4 text-amber-300 animate-pulse" />
+          <span>AI Event Co-Pilot</span>
+        </button>
       </div>
 
       {/* 2-Column Studio Grid */}
@@ -443,6 +474,13 @@ const CreateEventPage = () => {
           </div>
         </div>
       </div>
+
+      {/* AI Co-Pilot Modal */}
+      <AIEventGeneratorModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onApplyGeneratedData={handleApplyAiData}
+      />
     </div>
   );
 };

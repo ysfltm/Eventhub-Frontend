@@ -12,17 +12,19 @@ import {
   User,
   Clock3,
   Ban,
+  Award,
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
 import { AuthContext } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Alert } from '../../components/ui/Alert';
-import { fetchMyPasses } from '../../utils/passUtils';
+import { fetchMyPasses, extractEventId } from '../../utils/passUtils';
 import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
 import { CertificateModal } from '../../components/events/CertificateModal';
-import { Award } from 'lucide-react';
+import { EventAiConciergeWidget } from '../../components/ai/EventAiConciergeWidget';
 
 const QRCodeDisplay = ({ value, size = 180 }) => {
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}&color=020617&bgcolor=ffffff`;
@@ -43,25 +45,59 @@ const QRCodeDisplay = ({ value, size = 180 }) => {
 const DigitalPassPage = () => {
   const { id } = useParams();
   const { user } = useContext(AuthContext);
+  const { t, dir } = useLanguage();
   const printRef = useRef(null);
   const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
-  // Fetch user's passes to locate ticket by ID or GUID
+  // 1. Primary: Fetch user's passes list
   const {
     data: myPasses = [],
-    isLoading,
-    isError,
+    isLoading: isPassesLoading,
   } = useQuery({
     queryKey: ['myPasses', user?.idPerson || user?.id || user?.email],
     queryFn: () => fetchMyPasses(user),
   });
 
-  const pass = myPasses.find(
+  const matchedPassFromList = myPasses.find(
     (p) =>
       String(p.idParticipation || p.idPass || p.id) === String(id) ||
       String(p.idEvent || p.event?.idEvent || p.event?.id) === String(id)
   );
-  const event = pass?.event || {};
+
+  // 2. Secondary fallback: Fetch direct participation record if not yet found in list
+  const { data: directParticipation, isLoading: isDirectLoading } = useQuery({
+    queryKey: ['directParticipation', id],
+    queryFn: async () => {
+      if (!id) return null;
+      try {
+        const res = await axiosClient.get(ENDPOINTS.PARTICIPATION.BY_ID(id));
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(id && !matchedPassFromList),
+  });
+
+  const pass = matchedPassFromList || directParticipation;
+
+  // 3. Tertiary fallback: Fetch event if missing from pass
+  const eventIdFromPass = extractEventId(pass) || pass?.idEvent || pass?.IdEvent || (id && !isNaN(parseInt(id, 10)) ? parseInt(id, 10) : null);
+  const { data: directEvent } = useQuery({
+    queryKey: ['directPassEvent', eventIdFromPass],
+    queryFn: async () => {
+      if (!eventIdFromPass) return null;
+      try {
+        const res = await axiosClient.get(ENDPOINTS.EVENT.BY_ID(eventIdFromPass));
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(eventIdFromPass && !pass?.event?.title),
+  });
+
+  const event = pass?.event || directEvent || {};
 
   // Fetch QuestPDF Pass & Invitation record
   const { data: invitation } = useQuery({
@@ -122,6 +158,8 @@ const DigitalPassPage = () => {
     );
   };
 
+  const isLoading = isPassesLoading || (isDirectLoading && !pass);
+
   if (isLoading) {
     return (
       <div className="max-w-md mx-auto py-20 text-center space-y-3">
@@ -131,7 +169,7 @@ const DigitalPassPage = () => {
     );
   }
 
-  if (isError || !pass) {
+  if (!pass && !isLoading) {
     return (
       <div className="max-w-md mx-auto space-y-4 pt-8">
         <Link to="/passes" className="inline-flex items-center gap-2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]">
@@ -148,10 +186,10 @@ const DigitalPassPage = () => {
     pass?.pass?.qrCode ||
     pass?.invitation?.qrCode ||
     pass?.qrCode ||
-    `EVENTHUB-${event.idEvent || '0'}-${user?.idPerson || user?.id || '0'}-${pass.guid || 'VALIDPASS'}`;
+    `EVENTHUB-${event.idEvent || event.id || '0'}-${user?.idPerson || user?.id || '0'}-${pass?.guid || pass?.ticketGuid || 'VALIDPASS'}`;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-12">
+    <div dir={dir} className="max-w-2xl mx-auto space-y-6 pb-12">
       {/* Top Header Actions */}
       <div className="flex flex-wrap items-center justify-between no-print cst-stagger-1 gap-2">
         <Link
@@ -162,7 +200,7 @@ const DigitalPassPage = () => {
           Back to All Passes
         </Link>
         <div className="flex flex-wrap items-center gap-2">
-          {(pass.checkInStatus || pass.checkInTime || pass.status === 'CheckedIn') && (
+          {(pass?.checkInStatus || pass?.checkInTime || pass?.status === 'CheckedIn') && (
             <Button
               onClick={() => setIsCertModalOpen(true)}
               size="sm"
@@ -172,7 +210,7 @@ const DigitalPassPage = () => {
               <span>{t('certificate.viewCertificate', 'Official Certificate')}</span>
             </Button>
           )}
-          <AddToCalendarDropdown event={event} />
+          {event && event.title && <AddToCalendarDropdown event={event} />}
           <Button onClick={handlePrint} size="sm" variant="outline" className="text-xs cursor-pointer">
             <Printer className="w-3.5 h-3.5 mr-1.5" /> Print Ticket / PDF
           </Button>
@@ -198,7 +236,7 @@ const DigitalPassPage = () => {
               {event.company && (
                 <div className="flex items-center gap-1.5 text-xs text-[var(--cst-blue-400)] font-semibold mt-1">
                   <Building2 className="w-3.5 h-3.5" />
-                  <span>{event.company.name}</span>
+                  <span>{event.company.name || event.company}</span>
                 </div>
               )}
             </div>
@@ -215,7 +253,7 @@ const DigitalPassPage = () => {
                 <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Pass Holder</p>
                 <p className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
                   <User className="w-4 h-4 text-[var(--cst-blue-400)]" />
-                  {user?.email}
+                  {user?.email || pass?.email || pass?.person?.email}
                 </p>
               </div>
 
@@ -253,7 +291,7 @@ const DigitalPassPage = () => {
 
           {/* Footer Security Badge & QuestPDF Download */}
           <div className="p-4 bg-[var(--surface-850)] border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-            <span>Pass ID: #{pass.idPass || pass.idParticipation}</span>
+            <span>Pass ID: #{pass.idPass || pass.idParticipation || pass.id || id}</span>
             {invitation?.pdfPath && (
               <a
                 href={`${(import.meta.env.VITE_API_BASE_URL || 'https://localhost:7001/api').replace('/api', '')}${invitation.pdfPath}`}
@@ -297,6 +335,9 @@ const DigitalPassPage = () => {
         user={user}
         pass={pass}
       />
+
+      {/* Floating Attendee AI Concierge Widget */}
+      {event && <EventAiConciergeWidget event={event} />}
     </div>
   );
 };

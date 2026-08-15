@@ -39,6 +39,8 @@ import { isEventPassed, formatDateForInput, to24HourTimeSpan, TIME_OPTIONS_24H }
 import { useLanguage } from '../../context/LanguageContext';
 import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
 import { CertificateModal } from '../../components/events/CertificateModal';
+import { AIFeedbackInsightsCard } from '../../components/analytics/AIFeedbackInsightsCard';
+import { EventAiConciergeWidget } from '../../components/ai/EventAiConciergeWidget';
 import { Award } from 'lucide-react';
 
 const FIELD_INPUT =
@@ -799,6 +801,9 @@ const EventDetailsPage = () => {
         </Alert>
       )}
 
+      {/* ── AI Executive Feedback & Sentiment Insights ───────────────── */}
+      {id && <AIFeedbackInsightsCard eventId={id} eventTitle={event.title} />}
+
       {/* ── Feedback & Ratings Section ───────────────── */}
       <Card className="cst-stagger-3 p-6 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl space-y-6">
         <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
@@ -1254,6 +1259,9 @@ const EventDetailsPage = () => {
         user={user}
         pass={existingPass}
       />
+
+      {/* Floating Attendee AI Concierge Widget */}
+      <EventAiConciergeWidget event={event} />
 
     </div>
   );

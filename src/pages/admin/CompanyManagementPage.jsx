@@ -31,6 +31,8 @@ import { AddressLocationPicker } from '../../components/maps/AddressLocationPick
 import { AddressMapTrigger } from '../../components/maps/AddressMapTrigger';
 import { ImageUploader } from '../../components/common/ImageUploader';
 import { useLanguage } from '../../context/LanguageContext';
+import { AuthContext } from '../../context/AuthContext';
+import { ROLES, normalizeRole } from '../../utils/roleUtils';
 
 const getCompanyLogo = (comp) => {
   if (!comp) return null;
@@ -79,6 +81,10 @@ const CompanyLogoImage = ({ company, className = "w-full h-full object-cover" })
 
 export const CompanyManagementPage = () => {
   const { t } = useLanguage();
+  const { user } = React.useContext(AuthContext);
+  const userRole = normalizeRole(user?.role);
+  const isSuperAdmin = userRole === ROLES.SUPER_ADMIN;
+
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,21 +128,43 @@ export const CompanyManagementPage = () => {
     },
   });
 
+  const extractErrorMessage = (err, fallbackMsg = 'An error occurred. Please try again.') => {
+    if (!err) return fallbackMsg;
+    if (typeof err === 'string') return err;
+    const data = err.response?.data;
+    if (!data) return err.message || fallbackMsg;
+    if (typeof data === 'string') return data;
+    if (data.message) return data.message;
+    if (data.title) return data.title;
+    if (data.errors && typeof data.errors === 'object') {
+      const errList = Object.values(data.errors).flat().filter(Boolean);
+      if (errList.length > 0) return errList.join(' | ');
+    }
+    return err.message || fallbackMsg;
+  };
+
   // Create Company Mutation
   const createCompanyMutation = useMutation({
     mutationFn: async (payload) => {
       const formattedPayload = {
         name: payload.name,
+        Name: payload.name,
         email: payload.email,
+        Email: payload.email,
         phone: payload.phone,
+        Phone: payload.phone,
         address: payload.address,
-        expertise: payload.description || payload.expertise,
-        description: payload.description,
-        website: payload.website,
-        logo: payload.logoUrl,
-        Logo: payload.logoUrl,
-        logoUrl: payload.logoUrl,
-        LogoUrl: payload.logoUrl,
+        Address: payload.address,
+        expertise: payload.description || payload.expertise || '',
+        Expertise: payload.description || payload.expertise || '',
+        description: payload.description || payload.expertise || '',
+        Description: payload.description || payload.expertise || '',
+        website: payload.website || '',
+        Website: payload.website || '',
+        logo: payload.logoUrl || '',
+        Logo: payload.logoUrl || '',
+        logoUrl: payload.logoUrl || '',
+        LogoUrl: payload.logoUrl || '',
       };
       const res = await axiosClient.post(ENDPOINTS.COMPANY.BASE, formattedPayload);
       return res.data;
@@ -159,7 +187,7 @@ export const CompanyManagementPage = () => {
     onError: (err) => {
       setFeedback({
         type: 'error',
-        message: err.response?.data?.message || 'Failed to create company. Please try again.',
+        message: extractErrorMessage(err, 'Failed to create company. Please try again.'),
       });
     },
   });
@@ -167,31 +195,69 @@ export const CompanyManagementPage = () => {
   // Update Company Mutation
   const updateCompanyMutation = useMutation({
     mutationFn: async ({ id, data }) => {
+      const numericId = parseInt(id, 10);
+      const targetId = !isNaN(numericId) ? numericId : id;
       const payload = {
-        idCompany: parseInt(id, 10),
-        id: parseInt(id, 10),
+        idCompany: targetId,
+        IdCompany: targetId,
+        id: targetId,
+        Id: targetId,
         name: data.name,
+        Name: data.name,
         email: data.email,
+        Email: data.email,
         phone: data.phone,
+        Phone: data.phone,
         address: data.address,
-        expertise: data.description || data.expertise,
-        description: data.description,
-        website: data.website,
-        logo: data.logoUrl,
-        Logo: data.logoUrl,
-        logoUrl: data.logoUrl,
-        LogoUrl: data.logoUrl,
+        Address: data.address,
+        expertise: data.description || data.expertise || '',
+        Expertise: data.description || data.expertise || '',
+        description: data.description || data.expertise || '',
+        Description: data.description || data.expertise || '',
+        website: data.website || '',
+        Website: data.website || '',
+        logo: data.logoUrl || '',
+        Logo: data.logoUrl || '',
+        logoUrl: data.logoUrl || '',
+        LogoUrl: data.logoUrl || '',
       };
       try {
-        const res = await axiosClient.put(ENDPOINTS.COMPANY.BY_ID(id), payload);
+        const res = await axiosClient.put(ENDPOINTS.COMPANY.BY_ID(targetId), payload);
         return res.data;
-      } catch {
-        const res = await axiosClient.put(ENDPOINTS.COMPANY.BASE, payload);
-        return res.data;
+      } catch (err1) {
+        console.warn(`PUT /api/Company/${targetId} failed, trying base PUT /api/Company fallback:`, err1?.response?.status);
+        try {
+          const res = await axiosClient.put(ENDPOINTS.COMPANY.BASE, payload);
+          return res.data;
+        } catch {
+          throw err1;
+        }
       }
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      queryClient.setQueryData(['companies'], (old) => {
+        if (!old) return [];
+        const list = Array.isArray(old) ? old : (old?.items || old?.data || []);
+        return list.map((c) => {
+          const cId = c.idCompany || c.id || c.IdCompany || c.Id;
+          if (String(cId) === String(variables.id)) {
+            return {
+              ...c,
+              ...variables.data,
+              expertise: variables.data.description,
+              description: variables.data.description,
+              logo: variables.data.logoUrl,
+              Logo: variables.data.logoUrl,
+              logoUrl: variables.data.logoUrl,
+              ...(typeof data === 'object' ? data : {}),
+            };
+          }
+          return c;
+        });
+      });
+
       queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
       setEditingCompany(null);
       setFeedback({ type: 'success', message: 'Company profile updated successfully!' });
       setTimeout(() => setFeedback(null), 4000);
@@ -199,7 +265,7 @@ export const CompanyManagementPage = () => {
     onError: (err) => {
       setFeedback({
         type: 'error',
-        message: err.response?.data?.message || 'Failed to update company profile.',
+        message: extractErrorMessage(err, 'Failed to update company profile.'),
       });
     },
   });
@@ -292,12 +358,14 @@ export const CompanyManagementPage = () => {
               <span className="text-2xl font-black text-[var(--cst-red-400)]">{companies.length}</span>
             </div>
 
-            <Button
-              onClick={() => setIsAddModalOpen(true)}
-              className="cst-btn-motion bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white font-bold text-xs py-3 px-5 rounded-2xl shadow-lg shadow-[rgba(29,86,182,0.3)]"
-            >
-              <Plus className="w-4 h-4 mr-1.5" /> {t('companies.addNew', 'Add Host Company')}
-            </Button>
+            {isSuperAdmin && (
+              <Button
+                onClick={() => setIsAddModalOpen(true)}
+                className="cst-btn-motion bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white font-bold text-xs py-3 px-5 rounded-2xl shadow-lg shadow-[rgba(29,86,182,0.3)]"
+              >
+                <Plus className="w-4 h-4 mr-1.5" /> {t('companies.addNew', 'Add Host Company')}
+              </Button>
+            )}
           </div>
         </div>
       </Card>
@@ -357,9 +425,11 @@ export const CompanyManagementPage = () => {
           <p className="text-xs text-[var(--text-muted)] max-w-sm mx-auto">
             {searchQuery
               ? `No registered company matches "${searchQuery}".`
-              : 'Click "Add Company" above to register your first event-hosting organization.'}
+              : isSuperAdmin
+              ? 'Click "Add Company" above to register your first event-hosting organization.'
+              : 'No partner companies registered yet.'}
           </p>
-          {!searchQuery && (
+          {isSuperAdmin && !searchQuery && (
             <Button size="sm" onClick={() => setIsAddModalOpen(true)} className="mt-2">
               <Plus className="w-4 h-4 mr-1" /> Add First Company
             </Button>
@@ -383,40 +453,44 @@ export const CompanyManagementPage = () => {
                       </div>
                     </MagneticIcon>
                     <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingCompany(company);
-                          setEditFormData({
-                            name: company.name || '',
-                            description: company.description || company.expertise || '',
-                            email: company.email || '',
-                            phone: company.phone || '',
-                            website: company.website || '',
-                            logoUrl: company.logo || company.Logo || company.logoUrl || company.LogoUrl || '',
-                            address: company.address || '',
-                          });
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-900/60 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors cursor-pointer"
-                        title="Edit Company Profile"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (window.confirm(`Are you sure you want to delete '${company.name}'?`)) {
-                            deleteCompanyMutation.mutate(id);
-                          }
-                        }}
-                        disabled={deleteCompanyMutation.isPending}
-                        className="p-1.5 text-slate-400 hover:text-red-400 bg-slate-900/60 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors cursor-pointer"
-                        title="Delete Company"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {isSuperAdmin && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingCompany(company);
+                              setEditFormData({
+                                name: company.name || '',
+                                description: company.description || company.expertise || '',
+                                email: company.email || '',
+                                phone: company.phone || '',
+                                website: company.website || '',
+                                logoUrl: company.logo || company.Logo || company.logoUrl || company.LogoUrl || '',
+                                address: company.address || '',
+                              });
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-900/60 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors cursor-pointer"
+                            title="Edit Company Profile"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Are you sure you want to delete '${company.name}'?`)) {
+                                deleteCompanyMutation.mutate(id);
+                              }
+                            }}
+                            disabled={deleteCompanyMutation.isPending}
+                            className="p-1.5 text-slate-400 hover:text-red-400 bg-slate-900/60 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors cursor-pointer"
+                            title="Delete Company"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                       <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-[var(--surface-800)] text-[var(--text-muted)] border border-[var(--border-default)] shadow-sm">
                         #{id}
                       </span>
@@ -551,38 +625,42 @@ export const CompanyManagementPage = () => {
                           >
                             Details
                           </Button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingCompany(company);
-                              setEditFormData({
-                                name: company.name || '',
-                                description: company.description || company.expertise || '',
-                                email: company.email || '',
-                                phone: company.phone || '',
-                                website: company.website || '',
-                                logoUrl: company.logo || company.Logo || company.logoUrl || company.LogoUrl || '',
-                                address: company.address || '',
-                              });
-                            }}
-                            className="p-1 text-slate-400 hover:text-sky-400 transition-colors cursor-pointer"
-                            title="Edit"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (window.confirm(`Are you sure you want to delete '${company.name}'?`)) {
-                                deleteCompanyMutation.mutate(id);
-                              }
-                            }}
-                            disabled={deleteCompanyMutation.isPending}
-                            className="p-1 text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {isSuperAdmin && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCompany(company);
+                                  setEditFormData({
+                                    name: company.name || '',
+                                    description: company.description || company.expertise || '',
+                                    email: company.email || '',
+                                    phone: company.phone || '',
+                                    website: company.website || '',
+                                    logoUrl: company.logo || company.Logo || company.logoUrl || company.LogoUrl || '',
+                                    address: company.address || '',
+                                  });
+                                }}
+                                className="p-1 text-slate-400 hover:text-sky-400 transition-colors cursor-pointer"
+                                title="Edit"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Are you sure you want to delete '${company.name}'?`)) {
+                                    deleteCompanyMutation.mutate(id);
+                                  }
+                                }}
+                                disabled={deleteCompanyMutation.isPending}
+                                className="p-1 text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </InteractiveTableRow>
@@ -789,39 +867,43 @@ export const CompanyManagementPage = () => {
             </div>
 
             <div className="pt-4 flex items-center justify-between gap-2 border-t border-[var(--border-subtle)]">
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-red-400 border-red-800/40 hover:bg-red-950/40"
-                onClick={() => {
-                  const compId = selectedCompany.idCompany || selectedCompany.id;
-                  if (window.confirm(`Are you sure you want to delete '${selectedCompany.name}'?`)) {
-                    deleteCompanyMutation.mutate(compId);
-                  }
-                }}
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Organization
-              </Button>
-              <div className="flex items-center gap-2">
+              {isSuperAdmin ? (
                 <Button
                   size="sm"
+                  variant="outline"
+                  className="text-red-400 border-red-800/40 hover:bg-red-950/40"
                   onClick={() => {
-                    setEditingCompany(selectedCompany);
-                    setEditFormData({
-                      name: selectedCompany.name || '',
-                      description: selectedCompany.description || selectedCompany.expertise || '',
-                      email: selectedCompany.email || '',
-                      phone: selectedCompany.phone || '',
-                      website: selectedCompany.website || '',
-                      logoUrl: selectedCompany.logo || selectedCompany.Logo || selectedCompany.logoUrl || selectedCompany.LogoUrl || '',
-                      address: selectedCompany.address || '',
-                    });
-                    setSelectedCompany(null);
+                    const compId = selectedCompany.idCompany || selectedCompany.id;
+                    if (window.confirm(`Are you sure you want to delete '${selectedCompany.name}'?`)) {
+                      deleteCompanyMutation.mutate(compId);
+                    }
                   }}
-                  className="bg-sky-600 hover:bg-sky-500 text-white"
                 >
-                  <Pencil className="w-3.5 h-3.5 mr-1" /> Edit Profile
+                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Organization
                 </Button>
+              ) : <div />}
+              <div className="flex items-center gap-2">
+                {isSuperAdmin && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditingCompany(selectedCompany);
+                      setEditFormData({
+                        name: selectedCompany.name || '',
+                        description: selectedCompany.description || selectedCompany.expertise || '',
+                        email: selectedCompany.email || '',
+                        phone: selectedCompany.phone || '',
+                        website: selectedCompany.website || '',
+                        logoUrl: selectedCompany.logo || selectedCompany.Logo || selectedCompany.logoUrl || selectedCompany.LogoUrl || '',
+                        address: selectedCompany.address || '',
+                      });
+                      setSelectedCompany(null);
+                    }}
+                    className="bg-sky-600 hover:bg-sky-500 text-white"
+                  >
+                    <Pencil className="w-3.5 h-3.5 mr-1" /> Edit Profile
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => setSelectedCompany(null)}>
                   Close
                 </Button>
@@ -843,7 +925,7 @@ export const CompanyManagementPage = () => {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              const id = editingCompany.idCompany || editingCompany.id;
+              const id = editingCompany.idCompany || editingCompany.id || editingCompany.IdCompany || editingCompany.Id;
               updateCompanyMutation.mutate({ id, data: editFormData });
             }}
             className="space-y-4"
