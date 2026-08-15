@@ -14,6 +14,7 @@ import ParticleNetwork from '../../components/ui/ParticleNetwork';
 import { TiltCard } from '../../components/ui/TiltCard';
 import { RippleBackground } from '../../components/ui/RippleBackground';
 import { MagneticIcon } from '../../components/ui/MagneticIcon';
+import { PhoneInputWithCountryCode } from '../../components/ui/PhoneInputWithCountryCode';
 
 const RegisterPage = () => {
   const [formData, setFormData] = useState({
@@ -189,14 +190,12 @@ const RegisterPage = () => {
 
             <div className="space-y-1.5">
               <Label htmlFor="reg-phone">Phone Number</Label>
-              <Input
+              <PhoneInputWithCountryCode
                 id="reg-phone"
-                type="tel"
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
                 required
-                placeholder="+1 (555) 019-2834"
                 disabled={loading}
               />
             </div>

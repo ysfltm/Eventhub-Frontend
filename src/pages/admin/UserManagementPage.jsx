@@ -32,6 +32,7 @@ import { Alert } from '../../components/ui/Alert';
 import { useNotification } from '../../context/NotificationContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { ALL_ROLES, getRoleStyle, normalizeRole, ROLES } from '../../utils/roleUtils';
+import { PhoneInputWithCountryCode } from '../../components/ui/PhoneInputWithCountryCode';
 
 // Skeleton Component for Table Loading
 const UserTableSkeleton = () => (
@@ -875,13 +876,12 @@ const UserManagementPage = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="create-phone">Phone Number</Label>
-              <Input
+              <Label htmlFor="create-phone" className="mb-1 block">Phone Number</Label>
+              <PhoneInputWithCountryCode
                 id="create-phone"
-                placeholder="+1 (555) 000-0000"
+                name="phoneNumber"
                 value={formData.phoneNumber}
                 onChange={(e) => setFormData((prev) => ({ ...prev, phoneNumber: e.target.value }))}
-                className="mt-1 text-xs font-mono"
               />
             </div>
             <div>
@@ -997,12 +997,12 @@ const UserManagementPage = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="edit-phone">Phone Number</Label>
-              <Input
+              <Label htmlFor="edit-phone" className="mb-1 block">Phone Number</Label>
+              <PhoneInputWithCountryCode
                 id="edit-phone"
+                name="phoneNumber"
                 value={formData.phoneNumber}
                 onChange={(e) => setFormData((prev) => ({ ...prev, phoneNumber: e.target.value }))}
-                className="mt-1 text-xs font-mono"
               />
             </div>
             <div>

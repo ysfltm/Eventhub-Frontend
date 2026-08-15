@@ -30,6 +30,7 @@ import { InteractiveTableRow } from '../../components/ui/InteractiveTableRow';
 import { AddressLocationPicker } from '../../components/maps/AddressLocationPicker';
 import { AddressMapTrigger } from '../../components/maps/AddressMapTrigger';
 import { ImageUploader } from '../../components/common/ImageUploader';
+import { PhoneInputWithCountryCode } from '../../components/ui/PhoneInputWithCountryCode';
 import { useLanguage } from '../../context/LanguageContext';
 import { AuthContext } from '../../context/AuthContext';
 import { ROLES, normalizeRole } from '../../utils/roleUtils';
@@ -728,17 +729,14 @@ export const CompanyManagementPage = () => {
               />
             </div>
             <div>
-              <Label htmlFor="company-phone" className="text-xs">
+              <Label htmlFor="company-phone" className="text-xs mb-1 block">
                 Phone Number
               </Label>
-              <Input
+              <PhoneInputWithCountryCode
                 id="company-phone"
                 name="phone"
-                type="text"
-                placeholder="+1 (555) 000-0000"
                 value={formData.phone}
                 onChange={handleFormChange}
-                className="mt-1 text-xs"
               />
             </div>
           </div>
@@ -975,16 +973,14 @@ export const CompanyManagementPage = () => {
               </div>
 
               <div>
-                <Label htmlFor="edit-company-phone" className="text-xs">
+                <Label htmlFor="edit-company-phone" className="text-xs mb-1 block">
                   Phone Number
                 </Label>
-                <Input
+                <PhoneInputWithCountryCode
                   id="edit-company-phone"
                   name="phone"
-                  type="text"
                   value={editFormData.phone}
                   onChange={(e) => setEditFormData((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="mt-1 text-xs"
                 />
               </div>
             </div>
