@@ -145,6 +145,7 @@ const CheckInPage = () => {
         if (html5QrcodeRef.current.isScanning) {
           await html5QrcodeRef.current.stop();
         }
+        await html5QrcodeRef.current.clear();
       } catch (e) {
         console.warn('Error stopping camera:', e);
       }
@@ -160,16 +161,31 @@ const CheckInPage = () => {
   }, []);
 
   // Start Camera Scanner using enumerated camera ID or intelligent fallback
-  const startCameraScanner = async () => {
+  const startCameraScanner = async (cameraIdOverride = null) => {
     setScannerError('');
-    setScanning(true);
 
     try {
-      await stopCameraScanner();
+      // 1. Clean up any existing scanner instance without flipping scanning to false
+      if (html5QrcodeRef.current) {
+        try {
+          if (html5QrcodeRef.current.isScanning) {
+            await html5QrcodeRef.current.stop();
+          }
+          await html5QrcodeRef.current.clear();
+        } catch (e) {
+          console.warn('Cleanup before start warning:', e);
+        }
+        html5QrcodeRef.current = null;
+      }
+
+      setScanning(true);
+
+      // Wait a tick for React to render #qr-reader in the DOM
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       const container = document.getElementById('qr-reader');
       if (!container) {
-        setScannerError('Scanner element viewport not ready.');
+        setScannerError('Scanner element viewport not ready. Please try again.');
         setScanning(false);
         return;
       }
@@ -177,47 +193,72 @@ const CheckInPage = () => {
       const html5Qrcode = new Html5Qrcode('qr-reader');
       html5QrcodeRef.current = html5Qrcode;
 
-      const config = { fps: 10, qrbox: { width: 240, height: 240 } };
+      const config = {
+        fps: 15,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const qrboxSize = Math.max(Math.floor(minEdge * 0.7), 200);
+          return { width: qrboxSize, height: qrboxSize };
+        },
+        aspectRatio: 1.0,
+      };
 
-      const onScanSuccess = (decodedText) => {
-        stopCameraScanner();
+      const onScanSuccess = async (decodedText) => {
+        await stopCameraScanner();
         processCheckInPayload(decodedText);
       };
 
       const onScanError = () => {
-        // Frame scan error, ignore
+        // Frame scan error (no QR in current frame), ignore
       };
 
       let cameras = availableCameras;
-      if (cameras.length === 0) {
+      if (!cameras || cameras.length === 0) {
         try {
           cameras = await Html5Qrcode.getCameras();
-          setAvailableCameras(cameras);
+          if (cameras && cameras.length > 0) {
+            setAvailableCameras(cameras);
+            if (!selectedCameraId) {
+              setSelectedCameraId(cameras[0].id);
+            }
+          }
         } catch {
           cameras = [];
         }
       }
 
-      const cameraIdToUse = selectedCameraId || (cameras.length > 0 ? cameras[0].id : null);
+      const targetCameraId = (typeof cameraIdOverride === 'string' && cameraIdOverride.trim() !== '')
+        ? cameraIdOverride
+        : (selectedCameraId || (cameras && cameras.length > 0 ? cameras[0].id : null));
 
-      if (cameraIdToUse) {
-        await html5Qrcode.start(cameraIdToUse, config, onScanSuccess, onScanError);
+      if (targetCameraId) {
+        await html5Qrcode.start(targetCameraId, config, onScanSuccess, onScanError);
         return;
       }
 
       try {
-        await html5Qrcode.start({ facingMode: 'user' }, config, onScanSuccess, onScanError);
+        await html5Qrcode.start({ facingMode: 'environment' }, config, onScanSuccess, onScanError);
         return;
-      } catch (userErr) {
-        console.warn('User camera fallback failed:', userErr);
+      } catch (envErr) {
+        console.warn('Environment camera fallback failed, trying user facing camera:', envErr);
       }
 
-      await html5Qrcode.start({ facingMode: 'environment' }, config, onScanSuccess, onScanError);
+      await html5Qrcode.start({ facingMode: 'user' }, config, onScanSuccess, onScanError);
     } catch (err) {
       console.error('Camera access error:', err);
+      const errMsg = err?.message || err?.toString() || '';
       setScannerError(
-        'Could not access camera stream. Please check browser camera permissions or try File Drop / Manual Input.'
+        `Camera Error: ${errMsg || 'Could not access camera stream. Please check browser camera permissions.'}`
       );
+      if (html5QrcodeRef.current) {
+        try {
+          if (html5QrcodeRef.current.isScanning) {
+            await html5QrcodeRef.current.stop();
+          }
+          await html5QrcodeRef.current.clear();
+        } catch (_) {}
+        html5QrcodeRef.current = null;
+      }
       setScanning(false);
     }
   };
@@ -577,9 +618,10 @@ const CheckInPage = () => {
                   <select
                     value={selectedCameraId}
                     onChange={(e) => {
-                      setSelectedCameraId(e.target.value);
+                      const newId = e.target.value;
+                      setSelectedCameraId(newId);
                       if (scanning) {
-                        startCameraScanner();
+                        startCameraScanner(newId);
                       }
                     }}
                     className="bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-1.5 text-xs outline-none"
@@ -603,7 +645,7 @@ const CheckInPage = () => {
                   <div id="qr-reader" className={`w-full max-w-sm rounded-xl overflow-hidden border border-indigo-500/40 shadow-xl ${scanning ? 'block' : 'hidden'}`} />
 
                   {scanning ? (
-                    <Button variant="outline" onClick={stopCameraScanner} className="mt-4 border-slate-800 text-xs">
+                    <Button variant="outline" onClick={() => stopCameraScanner()} className="mt-4 border-slate-800 text-xs">
                       Stop Camera Scanner
                     </Button>
                   ) : (
@@ -614,7 +656,7 @@ const CheckInPage = () => {
                       <p className="text-sm text-slate-400 max-w-xs mx-auto">
                         Click below to launch device camera stream for live QR code reading.
                       </p>
-                      <Button onClick={startCameraScanner} className="shadow-lg shadow-indigo-600/20 bg-indigo-600 hover:bg-indigo-500 text-white">
+                      <Button onClick={() => startCameraScanner()} className="shadow-lg shadow-indigo-600/20 bg-indigo-600 hover:bg-indigo-500 text-white">
                         <Camera className="w-4 h-4 mr-2" /> Start Camera Stream
                       </Button>
                     </div>
