@@ -303,12 +303,24 @@ const UserManagementPage = () => {
         LinkedInUrl: payload.linkedInUrl || null,
         role: payload.role || ROLES.ATTENDEE,
         Role: payload.role || ROLES.ATTENDEE,
+        isActive: true,
+        IsActive: true,
+        isAccountActive: true,
+        IsAccountActive: true,
+        emailConfirmed: true,
+        EmailConfirmed: true,
       };
 
       const regPayload = {
         ...personPayload,
         password: payload.password || 'EventHubPassword2026!',
         Password: payload.password || 'EventHubPassword2026!',
+        isActive: true,
+        IsActive: true,
+        isAccountActive: true,
+        IsAccountActive: true,
+        emailConfirmed: true,
+        EmailConfirmed: true,
       };
 
       let createdData = null;
@@ -508,6 +520,12 @@ const UserManagementPage = () => {
           LinkedInUrl: emp.linkedInUrl || null,
           role: normalizeRole(emp.role || bulkDefaultRole || ROLES.ATTENDEE),
           Role: normalizeRole(emp.role || bulkDefaultRole || ROLES.ATTENDEE),
+          isActive: true,
+          IsActive: true,
+          isAccountActive: true,
+          IsAccountActive: true,
+          emailConfirmed: true,
+          EmailConfirmed: true,
         };
         try {
           return await axiosClient.post(ENDPOINTS.AUTH.REGISTER, regPayload);
@@ -579,6 +597,35 @@ const UserManagementPage = () => {
     });
     setShowEditPassword(false);
     setIsEditOpen(true);
+  };
+
+  const [invitingEmail, setInvitingEmail] = useState(null);
+
+  const handleSendInvitation = async (person) => {
+    const targetEmail = person.email || person.Email;
+    if (!targetEmail) return;
+
+    setInvitingEmail(targetEmail);
+    try {
+      await axiosClient.post(ENDPOINTS.AUTH.FORGOT_PASSWORD, { email: targetEmail });
+      addNotification({
+        type: 'success',
+        title: 'Invitation Sent! ✉️',
+        message: `Account onboarding email dispatched to ${targetEmail}.`,
+      });
+    } catch (err) {
+      console.warn('Invitation dispatch notice:', err?.response?.data || err?.message);
+      // Fallback: Copy link directly
+      const setupUrl = `${window.location.origin}/reset-password?email=${encodeURIComponent(targetEmail)}&type=invitation`;
+      navigator.clipboard.writeText(setupUrl);
+      addNotification({
+        type: 'info',
+        title: 'Invitation Link Copied 📋',
+        message: `Activation link copied to clipboard for ${targetEmail}.`,
+      });
+    } finally {
+      setInvitingEmail(null);
+    }
   };
 
   const handleOpenDelete = (person) => {
@@ -1242,6 +1289,19 @@ const UserManagementPage = () => {
                         {/* 7. Action Controls */}
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            <MagneticIcon maxShift={4} scaleOnHover={1.05}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleSendInvitation(person)}
+                                disabled={invitingEmail === (person.email || person.Email)}
+                                className="text-xs text-sky-400 hover:text-sky-300 hover:bg-sky-950/40 py-1 px-2.5 rounded-xl cursor-pointer"
+                                title="Send or resend account invitation email with set-password link"
+                              >
+                                <Mail className="w-3.5 h-3.5 mr-1" />
+                                {invitingEmail === (person.email || person.Email) ? 'Sending...' : 'Invite'}
+                              </Button>
+                            </MagneticIcon>
                             <MagneticIcon maxShift={4} scaleOnHover={1.05}>
                               <Button
                                 size="sm"

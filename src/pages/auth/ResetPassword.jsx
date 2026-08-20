@@ -19,6 +19,7 @@ export const ResetPassword = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const email = searchParams.get('email');
+  const isInvitation = searchParams.get('type') === 'invitation' || searchParams.get('welcome') === 'true';
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -65,15 +66,28 @@ export const ResetPassword = () => {
     try {
       await axiosClient.post(ENDPOINTS.AUTH.RESET_PASSWORD, {
         email,
+        Email: email,
         token,
+        Token: token,
         newPassword,
+        NewPassword: newPassword,
+        password: newPassword,
+        Password: newPassword,
+        isActive: true,
+        IsActive: true,
+        isAccountActive: true,
+        IsAccountActive: true,
+        emailConfirmed: true,
+        EmailConfirmed: true,
       });
       setIsSuccess(true);
     } catch (err) {
       console.error('Reset password error:', err);
       setError(
         err.response?.data?.message ||
-          'Failed to reset password. The link may be expired or invalid. Please request a new link below.'
+          (isInvitation
+            ? 'Failed to activate account. The invitation link may be expired. Please contact your event organiser.'
+            : 'Failed to reset password. The link may be expired or invalid. Please request a new link below.')
       );
     } finally {
       setLoading(false);
@@ -104,7 +118,7 @@ export const ResetPassword = () => {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--cst-blue-500)]">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>CST Solutions</span>
+            <span>EventHub Security &amp; Access</span>
           </div>
           <div className="flex items-center gap-2">
             <LanguageSelector size="sm" />
@@ -118,14 +132,14 @@ export const ResetPassword = () => {
             <CSTLogo height={52} showText={false} to={null} />
           </MagneticIcon>
           <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-            Reset Your Password
+            {isInvitation ? 'Welcome to EventHub! 🎉' : 'Set Your Account Password'}
           </h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
             {isSuccess
-              ? 'Your security credentials have been updated.'
+              ? 'Your password has been saved successfully.'
               : isLinkInvalid
               ? 'Security verification check failed.'
-              : `Create a strong new password for ${email}`}
+              : `Create a strong, secure password for ${email} to access your account & digital passes.`}
           </p>
         </div>
 
@@ -139,9 +153,11 @@ export const ResetPassword = () => {
             </div>
 
             <Alert variant="destructive" className="text-left">
-              <strong>Invalid or missing password reset link.</strong>
+              <strong>{isInvitation ? 'Invalid or expired invitation link.' : 'Invalid or missing password reset link.'}</strong>
               <p className="mt-1 text-xs text-rose-300">
-                This reset link is incomplete or missing required security tokens.
+                {isInvitation
+                  ? 'This invitation link is missing required security tokens or has expired. Please ask your event organizer to resend the invitation.'
+                  : 'This reset link is incomplete or missing required security tokens.'}
               </p>
             </Alert>
 
@@ -150,7 +166,7 @@ export const ResetPassword = () => {
                 <Link to="/forgot-password" className="w-full block">
                   <Button className="w-full h-11 text-sm font-semibold bg-[var(--cst-blue-600)] hover:bg-[var(--cst-blue-500)] text-white">
                     <RotateCcw className="w-4 h-4 mr-2" />
-                    Request New Reset Link
+                    Request New Link
                   </Button>
                 </Link>
               </MagneticIcon>
@@ -171,9 +187,13 @@ export const ResetPassword = () => {
             </div>
 
             <div className="space-y-1">
-              <h2 className="text-xl font-black text-[var(--text-primary)]">Password Reset Complete!</h2>
+              <h2 className="text-xl font-black text-[var(--text-primary)]">
+                {isInvitation ? 'Account Activated! 🎉' : 'Password Reset Complete!'}
+              </h2>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Your password has been changed successfully. You can now sign in with your new credentials.
+                {isInvitation
+                  ? 'Your password has been set. You can now log in to claim and view your digital event passes.'
+                  : 'Your password has been changed successfully. You can now sign in with your new credentials.'}
               </p>
             </div>
 
@@ -296,12 +316,12 @@ export const ResetPassword = () => {
                 {loading ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Updating Password...</span>
+                    <span>{isInvitation ? 'Activating Account...' : 'Updating Password...'}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4" />
-                    <span>Update Password</span>
+                    {isInvitation ? <Sparkles className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                    <span>{isInvitation ? 'Activate Account & Continue 🚀' : 'Save Password & Continue 🚀'}</span>
                   </div>
                 )}
               </Button>
