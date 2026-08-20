@@ -182,11 +182,18 @@ const DigitalPassPage = () => {
     );
   }
 
+  const rawPassEventId = event?.idEvent || event?.id || pass?.idEvent || '0';
+  const rawPassPersonId = user?.idPerson || user?.id || pass?.idPerson || pass?.person?.idPerson || '0';
+  const rawPassGuid = pass?.guid || pass?.ticketGuid;
+  const validPassGuid = (rawPassGuid && rawPassGuid !== '00000000-0000-0000-0000-000000000000')
+    ? rawPassGuid
+    : `PASS-${rawPassEventId}-${rawPassPersonId}-${pass?.idParticipation || pass?.idPass || pass?.id || id || '1'}`;
+
   const rawPassCode =
-    pass?.pass?.qrCode ||
-    pass?.invitation?.qrCode ||
-    pass?.qrCode ||
-    `EVENTHUB-${event.idEvent || event.id || '0'}-${user?.idPerson || user?.id || '0'}-${pass?.guid || pass?.ticketGuid || 'VALIDPASS'}`;
+    (pass?.pass?.qrCode && !pass.pass.qrCode.includes('00000000-0000-0000-0000-000000000000') && pass.pass.qrCode) ||
+    (pass?.invitation?.qrCode && !pass.invitation.qrCode.includes('00000000-0000-0000-0000-000000000000') && pass.invitation.qrCode) ||
+    (pass?.qrCode && !pass.qrCode.includes('00000000-0000-0000-0000-000000000000') && pass.qrCode) ||
+    `EVENTHUB-${rawPassEventId}-${rawPassPersonId}-${validPassGuid}`;
 
   return (
     <div dir={dir} className="max-w-2xl mx-auto space-y-6 pb-12">

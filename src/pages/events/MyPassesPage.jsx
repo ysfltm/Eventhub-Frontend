@@ -60,13 +60,16 @@ const MyPassesPage = () => {
   };
 
   const getPassQrPayload = (pass) => {
-    if (pass?.pass?.qrCode) return pass.pass.qrCode;
-    if (pass?.invitation?.qrCode) return pass.invitation.qrCode;
-    if (pass?.qrCode) return pass.qrCode;
+    if (pass?.pass?.qrCode && !pass.pass.qrCode.includes('00000000-0000-0000-0000-000000000000')) return pass.pass.qrCode;
+    if (pass?.invitation?.qrCode && !pass.invitation.qrCode.includes('00000000-0000-0000-0000-000000000000')) return pass.invitation.qrCode;
+    if (pass?.qrCode && !pass.qrCode.includes('00000000-0000-0000-0000-000000000000')) return pass.qrCode;
 
     const eventId = pass.idEvent || pass.event?.idEvent || pass.event?.id || 0;
-    const personId = user?.idPerson || user?.id || pass.idPerson || 0;
-    const guid = pass.guid || pass.ticketGuid || '00000000-0000-0000-0000-000000000000';
+    const personId = user?.idPerson || user?.id || pass.idPerson || pass.person?.idPerson || 0;
+    const rawGuid = pass.guid || pass.ticketGuid;
+    const guid = (rawGuid && rawGuid !== '00000000-0000-0000-0000-000000000000')
+      ? rawGuid
+      : `PASS-${eventId}-${personId}-${(pass.idParticipation || pass.idPass || pass.id || '1')}`;
     return `EVENTHUB-${eventId}-${personId}-${guid}`;
   };
 

@@ -19,6 +19,7 @@ import {
   Building2,
   User,
 } from 'lucide-react';
+import { LinkedInIcon } from '../../components/ui/LinkedInIcon';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
 import { Button } from '../../components/ui/Button';
@@ -27,6 +28,7 @@ import { Card } from '../../components/ui/Card';
 import { Alert } from '../../components/ui/Alert';
 import { Modal } from '../../components/ui/Modal';
 import { Label } from '../../components/ui/Label';
+import { useAuth } from '../../context/AuthContext';
 import {
   sendSinglePass,
   sendAllPasses,
@@ -39,6 +41,8 @@ const AttendeeRosterPage = () => {
   const { eventId, id: paramId } = useParams();
   const activeEventId = eventId || paramId;
   const queryClient = useQueryClient();
+  const { user, isSuperAdmin } = useAuth();
+  const userCompanyId = !isSuperAdmin && (user?.idCompany || user?.companyId) ? (user.idCompany || user.companyId) : null;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -106,6 +110,19 @@ const AttendeeRosterPage = () => {
     });
     return map;
   }, [persons]);
+
+  // Filter selectable persons in Add Modal to only this company's employees (or event's company)
+  const availablePersons = React.useMemo(() => {
+    const effectiveCompanyId = userCompanyId || event?.idCompany || event?.company?.idCompany || event?.companyId;
+    if (!effectiveCompanyId && isSuperAdmin) return persons;
+    if (effectiveCompanyId) {
+      return persons.filter((p) => {
+        const pCompId = p.idCompany || p.company?.idCompany || p.companyId;
+        return String(pCompId) === String(effectiveCompanyId);
+      });
+    }
+    return persons;
+  }, [persons, userCompanyId, event, isSuperAdmin]);
 
   const companiesMap = React.useMemo(() => {
     const map = {};
@@ -281,8 +298,34 @@ const AttendeeRosterPage = () => {
     const companyId = person.idCompany || item.idCompany;
     const companyObj = person.company || item.company || (companyId ? companiesMap[companyId] : null);
     const companyName = companyObj?.name || person.companyName || item.companyName || 'Independent Host';
+    const linkedInUrl = person.linkedInUrl || person.LinkedInUrl || item.linkedInUrl || item.LinkedInUrl || '';
 
-    return { personId, firstName, lastName, fullName, email, companyName };
+    return { personId, firstName, lastName, fullName, email, companyName, linkedInUrl };
+  };
+
+  const handlePingLinkedIn = (attendeeItem) => {
+    const { fullName, firstName, linkedInUrl } = getParticipantDetails(attendeeItem);
+    if (!linkedInUrl) return;
+
+    const partId = attendeeItem.idParticipation || attendeeItem.idPass || attendeeItem.id;
+    const eventTitle = event?.title || event?.Title || event?.name || 'Corporate Event';
+    const rawDate = event?.date || event?.Date || event?.dateEvent;
+    const eventDate = rawDate ? new Date(rawDate).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : 'Upcoming Date';
+    const eventLocation = event?.address || event?.Address || event?.location || 'Main Venue';
+    const ticketUrl = partId ? `${window.location.origin}/tickets/${partId}` : window.location.origin;
+
+    const message = `🎟️ *Official Event Invitation - EventHub*\n\nHello ${firstName || fullName}!\nYou are officially registered for "${eventTitle}".\n\n📅 Date: ${eventDate}\n📍 Venue: ${eventLocation}\n🔗 Your Digital Pass & QR: ${ticketUrl}\n\nLooking forward to seeing you there!`;
+
+    navigator.clipboard.writeText(message);
+
+    setDispatchStatus({
+      type: 'success',
+      message: `Personalized pass message copied for ${fullName}! Opening LinkedIn profile...`,
+    });
+    setTimeout(() => setDispatchStatus(null), 4000);
+
+    const targetProfile = linkedInUrl.startsWith('http') ? linkedInUrl : `https://${linkedInUrl}`;
+    window.open(targetProfile, '_blank', 'noopener,noreferrer');
   };
 
   const filteredAttendees = attendees.filter((item) => {
@@ -300,8 +343,10 @@ const AttendeeRosterPage = () => {
     );
   });
 
-  const checkedInCount = attendees.filter((a) => a.checkInStatus || a.isCheckedIn || a.status === 'CheckedIn').length;
-  const invitedCount = attendees.length - checkedInCount;
+  const confirmedCount = attendees.filter((a) => (a.status || '').toLowerCase().includes('confirm')).length;
+  const checkedInCount = attendees.filter((a) => a.checkInStatus || a.isCheckedIn || (a.status || '').toLowerCase().includes('check')).length;
+  const cancelledCount = attendees.filter((a) => a.isCancelled || (a.status || '').toLowerCase().includes('cancel')).length;
+  const pendingCount = attendees.length - (confirmedCount + checkedInCount + cancelledCount);
 
   const handleExportCSV = () => {
     if (attendees.length === 0) return;
@@ -319,7 +364,7 @@ const AttendeeRosterPage = () => {
     ];
     const rows = attendees.map((a) => {
       const { personId, firstName, lastName, fullName, email, companyName } = getParticipantDetails(a);
-      const status = a.checkInStatus || a.isCheckedIn || a.status === 'CheckedIn' ? 'CheckedIn' : a.isCancelled || a.status === 'Cancelled' ? 'Cancelled' : 'Invited';
+      const status = a.checkInStatus || a.isCheckedIn || a.status === 'CheckedIn' ? 'CheckedIn' : a.isCancelled || a.status === 'Cancelled' ? 'Cancelled' : a.status || 'Pending';
       return [
         a.idParticipation || a.idPass || a.id || 'N/A',
         personId || 'N/A',
@@ -345,32 +390,106 @@ const AttendeeRosterPage = () => {
     document.body.removeChild(link);
   };
 
+  // Update Attendance Status Mutation with Multi-Tier Fallback and Instant Optimistic Update
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ participationId, status }) => {
+      const payload = { status, Status: status };
+      try {
+        const res = await axiosClient.patch(ENDPOINTS.PARTICIPATION.UPDATE_STATUS(participationId), payload);
+        return res.data;
+      } catch (patchErr) {
+        try {
+          const res = await axiosClient.put(ENDPOINTS.PARTICIPATION.UPDATE_STATUS(participationId), payload);
+          return res.data;
+        } catch {
+          const res = await axiosClient.put(ENDPOINTS.PARTICIPATION.BY_ID(participationId), payload);
+          return res.data;
+        }
+      }
+    },
+    onMutate: async ({ participationId, status }) => {
+      // Cancel outgoing queries to prevent overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ['eventParticipations', activeEventId] });
+      const previousAttendees = queryClient.getQueryData(['eventParticipations', activeEventId]);
+
+      // Optimistically update cache immediately (0ms response)
+      queryClient.setQueryData(['eventParticipations', activeEventId], (oldData) => {
+        if (!oldData) return oldData;
+        const list = Array.isArray(oldData) ? oldData : (oldData?.data || oldData?.items || oldData?.$values || []);
+        const updated = list.map((item) => {
+          const partId = item.idParticipation || item.idPass || item.id;
+          if (String(partId) === String(participationId)) {
+            return {
+              ...item,
+              status: status,
+              Status: status,
+              checkInStatus: status === 'CheckedIn',
+              isCheckedIn: status === 'CheckedIn',
+              isCancelled: status === 'Cancelled',
+            };
+          }
+          return item;
+        });
+        return Array.isArray(oldData) ? updated : { ...oldData, data: updated };
+      });
+
+      return { previousAttendees };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousAttendees) {
+        queryClient.setQueryData(['eventParticipations', activeEventId], context.previousAttendees);
+      }
+      setDispatchStatus({
+        type: 'error',
+        message: err.response?.data?.message || err.message || 'Failed to update attendance status.',
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['eventParticipations', activeEventId] });
+    },
+    onSuccess: (data, variables) => {
+      setDispatchStatus({
+        type: 'success',
+        message: data?.message || `Attendance status changed to '${variables.status}'!`,
+      });
+      setTimeout(() => setDispatchStatus(null), 3500);
+    },
+  });
+
   /**
-   * Distinct Badge Color Helper per Key Design Takeaways:
-   * - Invited ➔ Blue
-   * - CheckedIn ➔ Green
-   * - Cancelled ➔ Gray
+   * Attendance Status Badges:
+   * - Confirmed ➔ Emerald
+   * - CheckedIn ➔ Cyan
+   * - Pending / Invited ➔ Amber
+   * - Cancelled ➔ Red / Slate
    */
   const getStatusBadge = (item) => {
-    const rawStatus = (item.status || (item.checkInStatus || item.isCheckedIn ? 'CheckedIn' : item.isCancelled ? 'Cancelled' : 'Invited')).toLowerCase();
+    const rawStatus = (item.status || (item.checkInStatus || item.isCheckedIn ? 'CheckedIn' : item.isCancelled ? 'Cancelled' : 'Pending')).toLowerCase();
 
     if (rawStatus.includes('check')) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-950/60 border border-emerald-800/50 text-emerald-400 shrink-0">
-          <CheckCircle2 className="w-3 h-3" /> CheckedIn
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-cyan-950/60 border border-cyan-800/50 text-cyan-300 shrink-0">
+          <ShieldCheck className="w-3 h-3 text-cyan-400" /> Checked-In
+        </span>
+      );
+    }
+    if (rawStatus.includes('confirm')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-950/60 border border-emerald-800/50 text-emerald-300 shrink-0">
+          <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Confirmed
         </span>
       );
     }
     if (rawStatus.includes('cancel')) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-800/80 border border-slate-700/50 text-slate-400 shrink-0">
-          <Ban className="w-3 h-3 text-slate-400" /> Cancelled
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-950/60 border border-rose-800/50 text-rose-300 shrink-0">
+          <Ban className="w-3 h-3 text-rose-400" /> Cancelled
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-950/60 border border-blue-800/50 text-blue-400 shrink-0">
-        <Clock3 className="w-3 h-3" /> Invited
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-950/60 border border-amber-800/50 text-amber-300 shrink-0">
+        <Clock3 className="w-3 h-3 text-amber-400" /> {rawStatus.includes('invit') ? 'Invited' : 'Pending RSVP'}
       </span>
     );
   };
@@ -417,16 +536,25 @@ const AttendeeRosterPage = () => {
               View participant names, company affiliations, email contacts, and dispatch passes.
             </p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <div className="p-3.5 bg-[var(--surface-850)] border border-[var(--border-default)] rounded-2xl text-center min-w-[100px] shadow-md">
-              <span className="text-[10px] font-bold uppercase text-[var(--cst-blue-400)] block">Invited</span>
-              <span className="text-2xl font-black text-[var(--cst-blue-300)]">{invitedCount}</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="p-3 bg-[var(--surface-850)] border border-emerald-800/40 rounded-2xl text-center min-w-[90px] shadow-md">
+              <span className="text-[10px] font-bold uppercase text-emerald-400 block">Confirmed</span>
+              <span className="text-xl font-black text-emerald-300">{confirmedCount}</span>
             </div>
-            <div className="p-3.5 bg-[var(--surface-850)] border border-[var(--border-default)] rounded-2xl text-center min-w-[100px] shadow-md">
-              <span className="text-[10px] font-bold uppercase text-emerald-400 block">CheckedIn</span>
-              <span className="text-2xl font-black text-emerald-300">{checkedInCount}</span>
+            <div className="p-3 bg-[var(--surface-850)] border border-amber-800/40 rounded-2xl text-center min-w-[90px] shadow-md">
+              <span className="text-[10px] font-bold uppercase text-amber-400 block">Pending</span>
+              <span className="text-xl font-black text-amber-300">{pendingCount}</span>
             </div>
+            <div className="p-3 bg-[var(--surface-850)] border border-cyan-800/40 rounded-2xl text-center min-w-[90px] shadow-md">
+              <span className="text-[10px] font-bold uppercase text-cyan-400 block">CheckedIn</span>
+              <span className="text-xl font-black text-cyan-300">{checkedInCount}</span>
+            </div>
+            {cancelledCount > 0 && (
+              <div className="p-3 bg-[var(--surface-850)] border border-rose-800/40 rounded-2xl text-center min-w-[90px] shadow-md">
+                <span className="text-[10px] font-bold uppercase text-rose-400 block">Cancelled</span>
+                <span className="text-xl font-black text-rose-300">{cancelledCount}</span>
+              </div>
+            )}
           </div>
         </div>
       </Card>
@@ -501,27 +629,21 @@ const AttendeeRosterPage = () => {
             </Alert>
           </div>
         ) : filteredAttendees.length === 0 ? (
-          <div className="py-16 text-center space-y-3">
-            <Users className="w-10 h-10 text-[var(--text-muted)] mx-auto opacity-50" />
-            <p className="text-sm font-semibold text-[var(--text-primary)]">No attendees found</p>
-            <p className="text-xs text-[var(--text-muted)]">
-              {searchQuery ? `No participant matches "${searchQuery}".` : 'No participants registered for this event yet.'}
-            </p>
-            <Button size="sm" onClick={() => setIsAddModalOpen(true)} className="mt-2 text-xs">
-              <UserPlus className="w-3.5 h-3.5 mr-1" /> Add First Participant
-            </Button>
+          <div className="py-16 text-center space-y-2">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">No attendees match your filter.</p>
+            <p className="text-xs text-[var(--text-secondary)]">Try adjusting your search criteria or register a new attendee.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-[var(--text-secondary)] border-collapse">
+            <table className="w-full text-left text-xs border-collapse">
               <colgroup>
-                <col style={{ width: '24%' }} />
                 <col style={{ width: '22%' }} />
-                <col style={{ width: '18%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '14%' }} />
                 <col style={{ width: '10%' }} />
+                <col style={{ width: '16%' }} />
                 <col style={{ width: '10%' }} />
-                <col style={{ width: '10%' }} />
-                <col style={{ width: '6%' }} />
+                <col style={{ width: '8%' }} />
               </colgroup>
               <thead className="bg-[var(--surface-850)] text-[var(--text-muted)] uppercase tracking-wider font-semibold border-b border-[var(--border-default)]">
                 <tr>
@@ -529,7 +651,7 @@ const AttendeeRosterPage = () => {
                   <th className="py-3.5 px-4">Contact Email</th>
                   <th className="py-3.5 px-4">Company / Host</th>
                   <th className="py-3.5 px-4">Participation ID</th>
-                  <th className="py-3.5 px-4">Pass Status</th>
+                  <th className="py-3.5 px-4">Attendance Status</th>
                   <th className="py-3.5 px-4">Dispatch Channels</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
@@ -537,8 +659,9 @@ const AttendeeRosterPage = () => {
               <tbody className="divide-y divide-[var(--border-subtle)]">
                 {filteredAttendees.map((item, idx) => {
                   const partId = item.idParticipation || item.idPass || item.id;
-                  const { personId, fullName, email, companyName } = getParticipantDetails(item);
+                  const { personId, fullName, email, companyName, linkedInUrl } = getParticipantDetails(item);
                   const { sentEmail, sentWhatsApp } = checkPassDispatchStatus(item);
+                  const currentStatus = item.status || (item.checkInStatus || item.isCheckedIn ? 'CheckedIn' : item.isCancelled ? 'Cancelled' : 'Pending');
 
                   return (
                     <tr key={partId || idx} className="hover:bg-[var(--nav-hover-bg)] transition-colors">
@@ -580,9 +703,31 @@ const AttendeeRosterPage = () => {
                         #{partId || 'N/A'}
                       </td>
 
-                      {/* 5. Pass Status */}
+                      {/* 5. Attendance Status & Quick Selector */}
                       <td className="py-4 px-4">
-                        {getStatusBadge(item)}
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(item)}
+                          {partId && (
+                            <select
+                              value={currentStatus}
+                              disabled={updateStatusMutation.isPending}
+                              onChange={(e) => {
+                                updateStatusMutation.mutate({
+                                  participationId: partId,
+                                  status: e.target.value,
+                                });
+                              }}
+                              className="bg-slate-950/80 border border-slate-700/60 text-[10px] text-slate-300 rounded-lg px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                              title="Update Attendance Status"
+                            >
+                              <option value="Pending">Pending</option>
+                              <option value="Invited">Invited</option>
+                              <option value="Confirmed">Confirmed</option>
+                              <option value="CheckedIn">CheckedIn</option>
+                              <option value="Cancelled">Cancelled</option>
+                            </select>
+                          )}
+                        </div>
                       </td>
 
                       {/* 6. Dispatch Channel Indicators */}
@@ -618,6 +763,18 @@ const AttendeeRosterPage = () => {
                       {/* 7. Single Invitation & Pass Dispatch Actions */}
                       <td className="py-4 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {linkedInUrl && (
+                            <Button
+                              onClick={() => handlePingLinkedIn(item)}
+                              size="sm"
+                              variant="outline"
+                              className="text-[11px] py-1 px-2 border-sky-500/30 text-sky-400 hover:bg-sky-950/40"
+                              title="Copy personalized pass message and open attendee's LinkedIn profile"
+                            >
+                              <LinkedInIcon className="w-3 h-3 mr-1" /> Ping
+                            </Button>
+                          )}
+
                           <Button
                             onClick={() => partId && sendSingleInvitationMutation.mutate(partId)}
                             disabled={sendSingleInvitationMutation.isPending || !partId}
@@ -665,7 +822,7 @@ const AttendeeRosterPage = () => {
             <Label htmlFor="person-id-select" className="text-xs">
               Select Registered Person *
             </Label>
-            {persons.length > 0 ? (
+            {availablePersons.length > 0 ? (
               <select
                 id="person-id-select"
                 required
@@ -674,7 +831,7 @@ const AttendeeRosterPage = () => {
                 className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] font-medium"
               >
                 <option value="">-- Select Person --</option>
-                {persons.map((p) => {
+                {availablePersons.map((p) => {
                   const pId = p.idPerson || p.id;
                   const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.name || p.email;
                   return (

@@ -37,6 +37,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../..
 import { Button } from '../../components/ui/Button';
 import { ALL_ROLES, getRoleStyle, normalizeRole, ROLES } from '../../utils/roleUtils';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAuth } from '../../context/AuthContext';
 import { checkPassDispatchStatus } from '../../utils/passUtils';
 import { AIFeedbackInsightsCard } from '../../components/analytics/AIFeedbackInsightsCard';
 
@@ -86,12 +87,15 @@ const EmptyChartState = ({ title, message }) => (
 
 const AnalyticsPage = () => {
   const { t } = useLanguage();
+  const { user, isSuperAdmin } = useAuth();
+  const userCompanyId = !isSuperAdmin && (user?.idCompany || user?.companyId) ? (user.idCompany || user.companyId) : null;
+
   const [selectedEventId, setSelectedEventId] = useState('');
   const [dateRange, setDateRange] = useState('30d'); // 7d | 30d | all
   const [selectedRoleFilter, setSelectedRoleFilter] = useState(''); // '' | PersonRole enum values
 
   // 1. Fetch Events List (GET /api/Event)
-  const { data: events = [] } = useQuery({
+  const { data: rawEvents = [] } = useQuery({
     queryKey: ['eventsListAnalytics'],
     queryFn: async () => {
       const res = await axiosClient.get(ENDPOINTS.EVENT.BASE);
@@ -99,8 +103,17 @@ const AnalyticsPage = () => {
     },
   });
 
+  const events = React.useMemo(() => {
+    const list = Array.isArray(rawEvents) ? rawEvents : rawEvents?.items ?? [];
+    if (!userCompanyId) return list;
+    return list.filter((ev) => {
+      const cId = ev.idCompany || ev.IdCompany || ev.company?.idCompany || ev.company?.IdCompany;
+      return String(cId) === String(userCompanyId);
+    });
+  }, [rawEvents, userCompanyId]);
+
   // 2. Fetch Persons List (GET /api/Person)
-  const { data: persons = [] } = useQuery({
+  const { data: rawPersons = [] } = useQuery({
     queryKey: ['allPersonsAnalytics'],
     queryFn: async () => {
       try {
@@ -112,8 +125,17 @@ const AnalyticsPage = () => {
     },
   });
 
+  const persons = React.useMemo(() => {
+    const list = Array.isArray(rawPersons) ? rawPersons : rawPersons?.items ?? [];
+    if (!userCompanyId) return list;
+    return list.filter((p) => {
+      const cId = p.idCompany || p.company?.idCompany || p.companyId;
+      return String(cId) === String(userCompanyId);
+    });
+  }, [rawPersons, userCompanyId]);
+
   // 3. Fetch Companies List (GET /api/Company)
-  const { data: companies = [] } = useQuery({
+  const { data: rawCompanies = [] } = useQuery({
     queryKey: ['allCompaniesAnalytics'],
     queryFn: async () => {
       try {
@@ -124,6 +146,15 @@ const AnalyticsPage = () => {
       }
     },
   });
+
+  const companies = React.useMemo(() => {
+    const list = Array.isArray(rawCompanies) ? rawCompanies : rawCompanies?.items ?? [];
+    if (!userCompanyId) return list;
+    return list.filter((c) => {
+      const cId = c.idCompany || c.id;
+      return String(cId) === String(userCompanyId);
+    });
+  }, [rawCompanies, userCompanyId]);
 
   // 4. Fetch Participations for all events via GET /api/Participation/event/{eventId}
   const { data: participations = [], isLoading: participationsLoading } = useQuery({

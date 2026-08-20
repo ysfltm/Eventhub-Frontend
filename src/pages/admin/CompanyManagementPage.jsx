@@ -307,7 +307,15 @@ export const CompanyManagementPage = () => {
     createCompanyMutation.mutate(formData);
   };
 
+  const userCompanyId = !isSuperAdmin && (user?.idCompany || user?.companyId) ? (user.idCompany || user.companyId) : null;
+
   const filteredCompanies = companies.filter((comp) => {
+    const cId = comp.idCompany || comp.id;
+    if (userCompanyId) {
+      const matchesId = String(cId) === String(userCompanyId);
+      const matchesName = user?.companyName && comp.name?.toLowerCase() === user.companyName?.toLowerCase();
+      if (!matchesId && !matchesName) return false;
+    }
     const q = searchQuery.toLowerCase();
     return (
       comp.name?.toLowerCase().includes(q) ||
@@ -338,25 +346,40 @@ export const CompanyManagementPage = () => {
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-[var(--cst-blue-400)] text-[10px] font-bold uppercase tracking-widest">
               <ShieldCheck className="w-3.5 h-3.5 text-[var(--cst-blue-400)]" />
-              <span>{t('companies.title', 'Event-Hosting Companies')}</span>
+              <span>{userCompanyId ? 'My Host Enterprise' : t('companies.title', 'Event-Hosting Companies')}</span>
+              {userCompanyId && (
+                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full text-[9px] font-mono border border-indigo-500/30">
+                  Scoped
+                </span>
+              )}
             </div>
             <h1 className="text-3xl font-black tracking-tight text-[var(--text-primary)]">
-              {t('companies.title', 'Event-Hosting Companies')}
+              {userCompanyId ? (user?.companyName || 'My Organization Profile') : t('companies.title', 'Event-Hosting Companies')}
             </h1>
             <p className="text-xs text-[var(--text-secondary)]">
-              {t('companies.subtitle', 'Manage corporate host organization profiles, branding credentials, and partner relationships.')}
+              {userCompanyId
+                ? 'Manage your organization profile, branding credentials, and partner relationships.'
+                : t('companies.subtitle', 'Manage corporate host organization profiles, branding credentials, and partner relationships.')}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             {/* Quick Metrics */}
             <div className="p-3.5 bg-[var(--surface-850)] border border-[var(--border-default)] rounded-2xl text-center min-w-[100px] shadow-md">
-              <span className="text-[10px] font-bold uppercase text-[var(--text-muted)] block">Total Hosts</span>
-              <span className="text-2xl font-black text-[var(--text-primary)]">{companies.length}</span>
+              <span className="text-[10px] font-bold uppercase text-[var(--text-muted)] block">
+                {userCompanyId ? 'My Host Profile' : 'Total Hosts'}
+              </span>
+              <span className="text-2xl font-black text-[var(--text-primary)]">
+                {userCompanyId ? '1' : companies.length}
+              </span>
             </div>
             <div className="p-3.5 bg-[var(--surface-850)] border border-[var(--border-default)] rounded-2xl text-center min-w-[100px] shadow-md">
-              <span className="text-[10px] font-bold uppercase text-[var(--cst-red-400)] block">Active Partners</span>
-              <span className="text-2xl font-black text-[var(--cst-red-400)]">{companies.length}</span>
+              <span className="text-[10px] font-bold uppercase text-[var(--cst-red-400)] block">
+                {userCompanyId ? 'Status' : 'Active Partners'}
+              </span>
+              <span className="text-2xl font-black text-[var(--cst-red-400)]">
+                {userCompanyId ? 'Active' : companies.length}
+              </span>
             </div>
 
             {isSuperAdmin && (

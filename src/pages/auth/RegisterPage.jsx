@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Eye, EyeOff, UserPlus, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, UserPlus, Sparkles, Building2, CheckCircle2, X } from 'lucide-react';
+import { LinkedInIcon } from '../../components/ui/LinkedInIcon';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
 import { Button } from '../../components/ui/Button';
@@ -25,7 +26,9 @@ const RegisterPage = () => {
     password: '',
     address: '',
     companyName: '',
+    idCompany: null,
     position: '',
+    linkedInUrl: '',
     role: 'Attendee',
   });
 
@@ -34,11 +37,117 @@ const RegisterPage = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  // Company Autocomplete State
+  const [companies, setCompanies] = useState([]);
+  const [companySuggestions, setCompanySuggestions] = useState([]);
+  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const companyInputContainerRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  // Prefetch registered companies for instant autocomplete
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const res = await axiosClient.get(ENDPOINTS.COMPANY.BASE);
+        const list = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+        setCompanies(list);
+      } catch (err) {
+        console.warn('Failed to prefetch companies for autocomplete:', err);
+      }
+    };
+    fetchCompanies();
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (
+        companyInputContainerRef.current &&
+        !companyInputContainerRef.current.contains(e.target)
+      ) {
+        setIsCompanyDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     });
+  };
+
+  const handleCompanyInputChange = (e) => {
+    const val = e.target.value;
+    setFormData((prev) => ({
+      ...prev,
+      companyName: val,
+      idCompany: null,
+    }));
+    setSelectedCompany(null);
+    setHighlightedIndex(-1);
+
+    if (val.trim().length > 0) {
+      const query = val.toLowerCase();
+      const matches = companies.filter((c) =>
+        (c.name || '').toLowerCase().includes(query)
+      );
+      setCompanySuggestions(matches);
+      setIsCompanyDropdownOpen(true);
+    } else {
+      setCompanySuggestions([]);
+      setIsCompanyDropdownOpen(false);
+    }
+  };
+
+  const handleSelectCompany = (company) => {
+    const cId = company.idCompany || company.id;
+    setFormData((prev) => ({
+      ...prev,
+      companyName: company.name,
+      idCompany: cId,
+    }));
+    setSelectedCompany(company);
+    setIsCompanyDropdownOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleClearCompany = () => {
+    setFormData((prev) => ({
+      ...prev,
+      companyName: '',
+      idCompany: null,
+    }));
+    setSelectedCompany(null);
+    setCompanySuggestions([]);
+    setIsCompanyDropdownOpen(false);
+  };
+
+  const handleCompanyKeyDown = (e) => {
+    if (!isCompanyDropdownOpen || companySuggestions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev < companySuggestions.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev > 0 ? prev - 1 : companySuggestions.length - 1
+      );
+    } else if (e.key === 'Enter') {
+      if (highlightedIndex >= 0 && highlightedIndex < companySuggestions.length) {
+        e.preventDefault();
+        handleSelectCompany(companySuggestions[highlightedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setIsCompanyDropdownOpen(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -47,6 +156,7 @@ const RegisterPage = () => {
     setLoading(true);
 
     try {
+      const effectiveCompanyId = formData.idCompany || selectedCompany?.idCompany || selectedCompany?.id || null;
       const payload = {
         firstName: formData.firstName,
         FirstName: formData.firstName,
@@ -62,8 +172,12 @@ const RegisterPage = () => {
         Address: formData.address,
         companyName: formData.companyName,
         CompanyName: formData.companyName,
+        idCompany: effectiveCompanyId,
+        IdCompany: effectiveCompanyId,
         position: formData.position,
         Position: formData.position,
+        linkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
+        LinkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
         role: 'Attendee',
         Role: 'Attendee',
       };
@@ -215,17 +329,108 @@ const RegisterPage = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="reg-companyName">Company Name</Label>
-              <Input
-                id="reg-companyName"
-                type="text"
-                name="companyName"
-                value={formData.companyName}
-                onChange={handleChange}
-                placeholder="Acme Innovations"
-                disabled={loading}
-              />
+            {/* Company Name with Live Autocomplete */}
+            <div className="space-y-1.5 relative" ref={companyInputContainerRef}>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="reg-companyName">Company Name</Label>
+                {selectedCompany && (
+                  <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Linked Host
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <Input
+                  id="reg-companyName"
+                  type="text"
+                  name="companyName"
+                  value={formData.companyName}
+                  onChange={handleCompanyInputChange}
+                  onFocus={() => {
+                    if (formData.companyName.trim().length > 0) {
+                      const query = formData.companyName.toLowerCase();
+                      const matches = companies.filter((c) =>
+                        (c.name || '').toLowerCase().includes(query)
+                      );
+                      setCompanySuggestions(matches);
+                      setIsCompanyDropdownOpen(true);
+                    }
+                  }}
+                  onKeyDown={handleCompanyKeyDown}
+                  placeholder="Type company (e.g. Acme, TechCorp)..."
+                  disabled={loading}
+                  autoComplete="off"
+                  className={selectedCompany ? 'border-emerald-500/50 bg-emerald-950/15 pr-8' : ''}
+                />
+                {selectedCompany && (
+                  <button
+                    type="button"
+                    onClick={handleClearCompany}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200 cursor-pointer"
+                    title="Clear selected company"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Autocomplete Suggestions Dropdown */}
+              {isCompanyDropdownOpen && (
+                <div
+                  ref={dropdownRef}
+                  className="absolute left-0 right-0 top-full mt-1.5 bg-[var(--surface-900)] border border-[var(--border-default)] rounded-2xl shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-[var(--border-subtle)]"
+                  style={{ backdropFilter: 'blur(20px)' }}
+                >
+                  {companySuggestions.length > 0 ? (
+                    <>
+                      <div className="px-3 py-1.5 bg-[var(--surface-850)] text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center justify-between">
+                        <span>Matching Registered Companies</span>
+                        <span className="font-mono text-[10px] text-[var(--cst-blue-400)]">{companySuggestions.length} found</span>
+                      </div>
+                      {companySuggestions.map((comp, idx) => {
+                        const isHighlighted = idx === highlightedIndex;
+                        return (
+                          <button
+                            key={comp.idCompany || comp.id || idx}
+                            type="button"
+                            onClick={() => handleSelectCompany(comp)}
+                            onMouseEnter={() => setHighlightedIndex(idx)}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                              isHighlighted ? 'bg-[var(--cst-blue-600)]/25 text-white' : 'text-[var(--text-primary)] hover:bg-[var(--surface-800)]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-6 h-6 rounded-lg bg-[var(--surface-800)] border border-[var(--border-default)] flex items-center justify-center shrink-0">
+                                <Building2 className="w-3.5 h-3.5 text-[var(--cst-blue-400)]" />
+                              </div>
+                              <div className="truncate">
+                                <div className="font-bold truncate">{comp.name}</div>
+                                {comp.address && (
+                                  <div className="text-[10px] text-[var(--text-muted)] truncate">{comp.address}</div>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0 ml-2">
+                              Select
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <div className="p-3 text-center space-y-1">
+                      <p className="text-xs text-[var(--text-muted)]">No registered company matching "{formData.companyName}"</p>
+                      <button
+                        type="button"
+                        onClick={() => setIsCompanyDropdownOpen(false)}
+                        className="text-[10px] font-semibold text-[var(--cst-blue-400)] hover:underline cursor-pointer"
+                      >
+                        Use as unlisted organization
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -264,6 +469,24 @@ const RegisterPage = () => {
               All new accounts are provisioned with the <strong>Attendee</strong> role by default.
               Elevated privileges (VIP, Speaker, Sponsor, Organiser) are managed by SuperAdmins in User Management.
             </div>
+          </div>
+
+          {/* LinkedIn Profile URL Field */}
+          <div className="space-y-1.5">
+            <Label htmlFor="reg-linkedin" className="flex items-center gap-1.5">
+              <LinkedInIcon className="w-3.5 h-3.5 text-sky-400" />
+              <span>LinkedIn Profile (Optional)</span>
+            </Label>
+            <Input
+              id="reg-linkedin"
+              type="url"
+              name="linkedInUrl"
+              value={formData.linkedInUrl}
+              onChange={handleChange}
+              placeholder="https://linkedin.com/in/username"
+              disabled={loading}
+              className="font-mono text-xs"
+            />
           </div>
 
           <div className="space-y-1.5">

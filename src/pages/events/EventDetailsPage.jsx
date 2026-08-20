@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -19,7 +19,9 @@ import {
   Users,
   Clock,
   Sparkles,
+  Gamepad2,
 } from 'lucide-react';
+import { LinkedInIcon } from '../../components/ui/LinkedInIcon';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
 import { AuthContext } from '../../context/AuthContext';
@@ -39,6 +41,7 @@ import { isEventPassed, formatDateForInput, to24HourTimeSpan, TIME_OPTIONS_24H }
 import { useLanguage } from '../../context/LanguageContext';
 import { AddToCalendarDropdown } from '../../components/events/AddToCalendarDropdown';
 import { CertificateModal } from '../../components/events/CertificateModal';
+import { LinkedInAdModal } from '../../components/events/LinkedInAdModal';
 import { AIFeedbackInsightsCard } from '../../components/analytics/AIFeedbackInsightsCard';
 import { EventAiConciergeWidget } from '../../components/ai/EventAiConciergeWidget';
 import { Award } from 'lucide-react';
@@ -87,6 +90,9 @@ const EventDetailsPage = () => {
   // Certificate Modal state
   const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
+  // LinkedIn Promotion Modal state
+  const [isLinkedInModalOpen, setIsLinkedInModalOpen] = useState(false);
+
   // 1. Fetch Event details
   const {
     data: event,
@@ -132,6 +138,28 @@ const EventDetailsPage = () => {
     ? rawCompaniesData.$values
     : [];
 
+  const userCompanyId = useMemo(() => {
+    if (isSuperAdmin) return null;
+    if (user?.idCompany) return user.idCompany;
+    if (user?.companyId) return user.companyId;
+    if (user?.companyName && companiesList.length > 0) {
+      const match = companiesList.find(
+        (c) => c.name?.toLowerCase() === user.companyName.toLowerCase()
+      );
+      if (match) return match.idCompany || match.id;
+    }
+    return null;
+  }, [isSuperAdmin, user, companiesList]);
+
+  const userCompanyName = useMemo(() => {
+    if (user?.companyName) return user.companyName;
+    if (userCompanyId) {
+      const match = companiesList.find((c) => (c.idCompany || c.id) === userCompanyId);
+      if (match) return match.name;
+    }
+    return 'My Company';
+  }, [user, userCompanyId, companiesList]);
+
   // 4. Fetch user's passes to check registration and check-in status
   const { data: myPasses = [] } = useQuery({
     queryKey: ['myPasses', user?.idPerson || user?.id || user?.email],
@@ -169,10 +197,11 @@ const EventDetailsPage = () => {
   // Open Edit Modal with prefilled values
   const handleOpenEditModal = () => {
     if (!event) return;
+    const effectiveCompId = userCompanyId || event.idCompany || event.IdCompany || event.company?.idCompany || event.company?.id || '';
     setEditFormData({
       title: event.title || event.Title || '',
       description: event.description || event.Description || '',
-      idCompany: event.idCompany || event.IdCompany || event.company?.idCompany || event.company?.id || '',
+      idCompany: effectiveCompId ? String(effectiveCompId) : '',
       date: formatDateForInput(event.date || event.Date),
       startTime: (event.startTime || event.StartTime || '09:00:00').substring(0, 5),
       endTime: (event.endTime || event.EndTime || '18:00:00').substring(0, 5),
@@ -606,73 +635,66 @@ const EventDetailsPage = () => {
             )}
           </div>
 
-          {/* Registration / Action Panel */}
-          <div className="flex flex-col gap-3 shrink-0 min-w-[200px]">
+          {/* Registration & Interactive Command Hub */}
+          <div className="flex flex-col gap-2.5 shrink-0 w-full md:w-[280px] lg:w-[310px] bg-slate-950/70 backdrop-blur-xl border border-slate-800/80 p-3.5 rounded-2xl shadow-2xl shadow-slate-950/60">
+            {/* Primary Action / Pass Status */}
             {isRegistered ? (
               <div className="space-y-2">
                 <Button
                   onClick={() => navigate(existingPass ? `/tickets/${existingPass.idPass || existingPass.idParticipation}` : '/passes')}
-                  className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer"
+                  className="w-full h-11 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-950/50 flex items-center justify-between px-3.5 transition-all hover:scale-[1.01] cursor-pointer"
                 >
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
-                  View Entry Ticket
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                    <span>View Entry Ticket</span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-800/80 border border-emerald-400/30 px-2 py-0.5 rounded-full font-mono font-bold">
+                    PASS #{existingPass?.idPass || existingPass?.idParticipation || 'ACTIVE'}
+                  </span>
                 </Button>
+
                 {isCheckedIn && (
                   <Button
                     type="button"
                     onClick={() => setIsCertModalOpen(true)}
-                    className="w-full text-xs font-bold bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 border border-amber-500/40 shadow-sm cursor-pointer flex items-center justify-center gap-2 py-2"
+                    className="w-full h-9 text-xs font-bold bg-gradient-to-r from-amber-500/20 via-amber-600/20 to-yellow-500/20 hover:from-amber-500/30 hover:to-yellow-500/30 text-amber-300 border border-amber-500/40 rounded-xl shadow-sm cursor-pointer flex items-center justify-center gap-2"
                   >
                     <Award className="w-4 h-4 text-amber-400" />
                     <span>{t('certificate.viewCertificate', 'Official Certificate')}</span>
                   </Button>
                 )}
-                <Button
-                  onClick={() => {
-                    if (confirm(`Are you sure you want to cancel registration for '${event.title}'?`)) {
-                      cancelMutation.mutate();
-                    }
-                  }}
-                  disabled={isCheckedIn || cancelMutation.isPending}
-                  variant="outline"
-                  className="w-full text-xs text-red-400 border-red-800/50 hover:bg-red-950/40 cursor-pointer"
-                  title={isCheckedIn ? 'Cannot cancel after door check-in' : 'Cancel Registration'}
-                >
-                  <XCircle className="w-3.5 h-3.5 mr-1.5" />
-                  {cancelMutation.isPending ? 'Cancelling...' : 'Cancel Registration'}
-                </Button>
               </div>
             ) : hasEventPassed ? (
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <Button
                   disabled
-                  className="w-full h-11 bg-slate-800/60 text-slate-400 border border-slate-700/50 font-semibold cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full h-11 bg-slate-900 text-slate-400 border border-slate-800 font-semibold cursor-not-allowed flex items-center justify-center gap-2 rounded-xl text-xs"
                 >
                   <Clock className="w-4 h-4 text-slate-500" />
-                  <span>{t('events.eventPassed', 'Event Passed')}</span>
+                  <span>{t('events.eventPassed', 'Event Concluded')}</span>
                 </Button>
                 <p className="text-[10px] text-amber-400/90 text-center font-medium">
-                  {t('eventDetails.eventPassedNotice', 'This event has concluded. Registration is closed.')}
+                  {t('eventDetails.eventPassedNotice', 'Registration closed.')}
                 </p>
               </div>
             ) : isEventFull ? (
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <Button
                   disabled
-                  className="w-full h-11 bg-rose-950/40 text-rose-400 border border-rose-800/40 font-semibold cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full h-11 bg-rose-950/40 text-rose-400 border border-rose-800/40 font-semibold cursor-not-allowed flex items-center justify-center gap-2 rounded-xl text-xs"
                 >
                   <Users className="w-4 h-4 text-rose-400" />
                   <span>{t('events.eventFull', 'Event Full')}</span>
                 </Button>
                 <p className="text-[10px] text-rose-400/90 text-center font-medium">
-                  {t('eventDetails.eventFullNotice', 'This event has reached full capacity.')}
+                  {t('eventDetails.eventFullNotice', 'Capacity reached.')}
                 </p>
               </div>
             ) : (
               <Button
                 onClick={() => claimPassMutation.mutate()}
                 disabled={claimPassMutation.isPending}
-                className="w-full h-11 bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white font-semibold cursor-pointer"
+                className="w-full h-11 bg-gradient-to-r from-[var(--cst-blue-700)] to-indigo-600 hover:from-[var(--cst-blue-600)] hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-950/50 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] cursor-pointer"
               >
                 {claimPassMutation.isPending ? (
                   <div className="flex items-center gap-2">
@@ -688,16 +710,70 @@ const EventDetailsPage = () => {
               </Button>
             )}
 
-            {canViewRoster && (
-              <Link to={`/events/${id}/attendees`}>
-                <Button variant="outline" className="w-full h-10 text-xs cursor-pointer">
-                  <ListChecks className="w-4 h-4 mr-1.5 text-[var(--cst-blue-400)]" />
-                  View Attendee Roster ({attendeeCount})
-                </Button>
-              </Link>
-            )}
+            {/* Interactive & Engagement Row (2 Columns) */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {/* Live Kahoot Arena */}
+              <Button
+                onClick={() => navigate(`/events/${event.idEvent || event.IdEvent || id}/live-arena`)}
+                className="h-10 text-[11px] font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl shadow-md shadow-purple-950/40 flex items-center justify-center gap-1.5 transition-all hover:scale-[1.02] cursor-pointer border border-purple-400/20"
+                title="Open Live Kahoot Arena"
+              >
+                <Gamepad2 className="w-3.5 h-3.5 text-amber-300" />
+                <span>Kahoot 🎮</span>
+              </Button>
 
-            <AddToCalendarDropdown event={event} className="w-full [&>button]:w-full" />
+              {/* Promote on LinkedIn */}
+              <Button
+                onClick={() => setIsLinkedInModalOpen(true)}
+                variant="outline"
+                className="h-10 text-[11px] font-bold border-sky-500/40 text-sky-400 bg-sky-950/30 hover:bg-sky-900/40 rounded-xl shadow-md shadow-sky-950/30 flex items-center justify-center gap-1.5 transition-all hover:scale-[1.02] cursor-pointer"
+                title="Promote on LinkedIn"
+              >
+                <LinkedInIcon className="w-3.5 h-3.5 text-sky-400" />
+                <span>LinkedIn 🚀</span>
+              </Button>
+            </div>
+
+            {/* Utility & Roster Row (2 Columns) */}
+            <div className="grid grid-cols-2 gap-2">
+              {canViewRoster ? (
+                <Link to={`/events/${id}/attendees`} className="w-full">
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 text-[11px] font-medium border-slate-700 bg-slate-900/90 hover:bg-slate-800 text-slate-200 rounded-xl flex items-center justify-center gap-1 cursor-pointer"
+                    title="View Attendee Roster"
+                  >
+                    <ListChecks className="w-3.5 h-3.5 text-[var(--cst-blue-400)] shrink-0" />
+                    <span className="truncate">Roster ({attendeeCount})</span>
+                  </Button>
+                </Link>
+              ) : null}
+
+              <AddToCalendarDropdown
+                event={event}
+                className={`${canViewRoster ? 'w-full' : 'col-span-2 w-full'} [&>button]:w-full [&>button]:h-9 [&>button]:text-[11px] [&>button]:rounded-xl [&>button]:bg-slate-900/90 [&>button]:border-slate-700`}
+              />
+            </div>
+
+            {/* Subtle Cancel Registration Link */}
+            {isRegistered && (
+              <div className="pt-1 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Are you sure you want to cancel registration for '${event.title || event.name}'?`)) {
+                      cancelMutation.mutate();
+                    }
+                  }}
+                  disabled={isCheckedIn || cancelMutation.isPending}
+                  className="text-[11px] text-slate-500 hover:text-red-400 transition-colors inline-flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:hover:text-slate-500"
+                  title={isCheckedIn ? 'Cannot cancel after door check-in' : 'Cancel Registration'}
+                >
+                  <XCircle className="w-3 h-3 text-red-400/70" />
+                  <span>{isCheckedIn ? 'Checked-In (Active)' : cancelMutation.isPending ? 'Cancelling...' : 'Cancel Registration'}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </Card>
@@ -1088,19 +1164,29 @@ const EventDetailsPage = () => {
 
             <div className="space-y-1.5">
               <Label htmlFor="edit-company">Host Company</Label>
-              <Select
-                id="edit-company"
-                value={editFormData.idCompany}
-                onChange={(e) => setEditFormData((prev) => ({ ...prev, idCompany: e.target.value }))}
-                disabled={updateEventMutation.isPending}
-              >
-                <option value="" className="bg-slate-900 text-slate-400">Select host company (or none)...</option>
-                {companiesList.map((c) => (
-                  <option key={c.idCompany || c.id} value={c.idCompany || c.id} className="bg-slate-900 text-slate-100">
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+              {userCompanyId ? (
+                <div className="w-full p-2.5 rounded-2xl text-xs bg-indigo-950/40 border border-indigo-500/30 text-indigo-300 font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-indigo-400" />
+                    <span>{userCompanyName}</span>
+                  </div>
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono">Scoped</span>
+                </div>
+              ) : (
+                <Select
+                  id="edit-company"
+                  value={editFormData.idCompany}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, idCompany: e.target.value }))}
+                  disabled={updateEventMutation.isPending}
+                >
+                  <option value="" className="bg-slate-900 text-slate-400">Select host company (or none)...</option>
+                  {companiesList.map((c) => (
+                    <option key={c.idCompany || c.id} value={c.idCompany || c.id} className="bg-slate-900 text-slate-100">
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1258,6 +1344,13 @@ const EventDetailsPage = () => {
         event={event}
         user={user}
         pass={existingPass}
+      />
+
+      {/* LinkedIn Campaign & Program Promotion Modal */}
+      <LinkedInAdModal
+        isOpen={isLinkedInModalOpen}
+        onClose={() => setIsLinkedInModalOpen(false)}
+        event={event}
       />
 
       {/* Floating Attendee AI Concierge Widget */}

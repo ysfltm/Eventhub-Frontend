@@ -104,6 +104,8 @@ const Dashboard = () => {
     normalizedRole === 'SuperAdmin' ||
     user?.role === 'Admin' ||
     user?.role === 'EventOrganizer';
+  const isSuperAdmin = normalizedRole === 'SuperAdmin';
+  const userCompanyId = !isSuperAdmin && (user?.idCompany || user?.companyId) ? (user.idCompany || user.companyId) : null;
 
   // 1. Events query
   const {
@@ -118,13 +120,24 @@ const Dashboard = () => {
     },
   });
 
-  const events = Array.isArray(rawEvents)
+  const rawEventsList = Array.isArray(rawEvents)
     ? rawEvents
     : Array.isArray(rawEvents?.data)
     ? rawEvents.data
     : Array.isArray(rawEvents?.$values)
     ? rawEvents.$values
     : [];
+
+  const events = rawEventsList.filter((evt) => {
+    if (!evt) return false;
+    if (userCompanyId) {
+      const evtCompId = evt.idCompany || evt.IdCompany || evt.company?.idCompany || evt.company?.IdCompany;
+      if (evtCompId && String(evtCompId) !== String(userCompanyId)) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   // 2. Fetch pass count for attendees
   const { data: myPasses = [] } = useQuery({

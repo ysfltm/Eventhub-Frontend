@@ -17,6 +17,7 @@ import AttendeeRosterPage from '../pages/events/AttendeeRosterPage';
 import CompanyManagementPage from '../pages/admin/CompanyManagementPage';
 import AnalyticsPage from '../pages/admin/AnalyticsPage';
 import UserManagementPage from '../pages/admin/UserManagementPage';
+import LiveEventArenaPage from '../pages/events/LiveEventArenaPage';
 import DashboardLayout from '../layouts/DashboardLayout';
 import RoleGuard from '../components/protection/RoleGuard';
 import { NotificationProvider } from '../context/NotificationContext';
@@ -52,6 +53,7 @@ const AppRoutes = () => {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/events/:id" element={<EventDetailsPage />} />
+            <Route path="/events/:id/live-arena" element={<LiveEventArenaPage />} />
             <Route path="/passes" element={<MyPassesPage />} />
             <Route path="/my-registrations" element={<MyRegistrationsPage />} />
             <Route path="/tickets/:id" element={<DigitalPassPage />} />

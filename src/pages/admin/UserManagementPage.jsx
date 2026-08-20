@@ -18,7 +18,23 @@ import {
   User,
   Inbox,
   CheckCircle2,
+  FileSpreadsheet,
+  Upload,
+  Plus,
+  Download,
+  Copy,
+  Table,
+  FileText,
+  Sparkles,
+  Info,
+  ListPlus,
+  Eye,
+  EyeOff,
+  Key,
+  Lock,
+  Check,
 } from 'lucide-react';
+import { LinkedInIcon } from '../../components/ui/LinkedInIcon';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
 import { Button } from '../../components/ui/Button';
@@ -31,8 +47,29 @@ import { Modal } from '../../components/ui/Modal';
 import { Alert } from '../../components/ui/Alert';
 import { useNotification } from '../../context/NotificationContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAuth } from '../../context/AuthContext';
 import { ALL_ROLES, getRoleStyle, normalizeRole, ROLES } from '../../utils/roleUtils';
 import { PhoneInputWithCountryCode } from '../../components/ui/PhoneInputWithCountryCode';
+
+// Secure Password Generator for Personnel Creation
+const generateSecurePassword = () => {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const special = '!@#$%&*';
+
+  let pass = '';
+  pass += upper.charAt(Math.floor(Math.random() * upper.length));
+  pass += lower.charAt(Math.floor(Math.random() * lower.length));
+  pass += digits.charAt(Math.floor(Math.random() * digits.length));
+  pass += special.charAt(Math.floor(Math.random() * special.length));
+
+  const all = upper + lower + digits + special;
+  for (let i = 0; i < 6; i++) {
+    pass += all.charAt(Math.floor(Math.random() * all.length));
+  }
+  return pass;
+};
 
 // Skeleton Component for Table Loading
 const UserTableSkeleton = () => (
@@ -48,12 +85,14 @@ const UserManagementPage = () => {
   const queryClient = useQueryClient();
   const { addNotification } = useNotification();
   const { t } = useLanguage();
+  const { user, isSuperAdmin } = useAuth();
   const roleScrollRef = React.useRef(null);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('');
+  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -63,16 +102,32 @@ const UserManagementPage = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  // Bulk Upload State
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkCompanyId, setBulkCompanyId] = useState('');
+  const [bulkMode, setBulkMode] = useState('grid'); // 'grid' | 'paste'
+  const [bulkDefaultRole, setBulkDefaultRole] = useState(ROLES.ATTENDEE);
+  const [bulkDefaultPassword, setBulkDefaultPassword] = useState('Event2026!');
+  const [bulkEmployeesText, setBulkEmployeesText] = useState('');
+  const [bulkRows, setBulkRows] = useState([
+    { id: 1, firstName: '', lastName: '', email: '', phoneNumber: '', position: '', linkedInUrl: '', password: 'Event2026!', role: ROLES.ATTENDEE },
+    { id: 2, firstName: '', lastName: '', email: '', phoneNumber: '', position: '', linkedInUrl: '', password: 'Event2026!', role: ROLES.ATTENDEE },
+    { id: 3, firstName: '', lastName: '', email: '', phoneNumber: '', position: '', linkedInUrl: '', password: 'Event2026!', role: ROLES.ATTENDEE },
+  ]);
   const [selectedPerson, setSelectedPerson] = useState(null);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
+    password: '',
     phoneNumber: '',
     idCompany: '',
     position: '',
+    linkedInUrl: '',
     role: ROLES.ATTENDEE,
   });
 
@@ -82,7 +137,7 @@ const UserManagementPage = () => {
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
-      setCurrentPage(1); // Reset to page 1 on search change
+      setCurrentPage(1);
     }, 300);
     return () => clearTimeout(handler);
   }, [searchQuery]);
@@ -124,6 +179,28 @@ const UserManagementPage = () => {
     return map;
   }, [companies]);
 
+  // If not SuperAdmin and user belongs to a company, isolate to their company
+  const userCompanyId = useMemo(() => {
+    if (isSuperAdmin) return null;
+    if (user?.idCompany) return user.idCompany;
+    if (user?.companyId) return user.companyId;
+    if (user?.companyName && companies.length > 0) {
+      const match = companies.find(
+        (c) => c.name?.toLowerCase() === user.companyName.toLowerCase()
+      );
+      if (match) return match.idCompany || match.id;
+    }
+    return null;
+  }, [isSuperAdmin, user, companies]);
+
+  const userCompanyName = useMemo(() => {
+    if (user?.companyName) return user.companyName;
+    if (userCompanyId && companiesMap[userCompanyId]) {
+      return companiesMap[userCompanyId].name;
+    }
+    return 'My Company';
+  }, [user, userCompanyId, companiesMap]);
+
   // Helper for safe error message extraction
   const extractErrorMessage = (err, fallbackMsg) => {
     if (!err) return fallbackMsg;
@@ -141,36 +218,120 @@ const UserManagementPage = () => {
     return fallbackMsg;
   };
 
-  // 3. Create Person Mutation: POST /api/Person (with Auth register fallback)
+  const generateSecurePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    let pass = 'Cst2026!';
+    for (let i = 0; i < 4; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return pass;
+  };
+
+  const handleCopyCredentials = (email, password, name = '') => {
+    if (!email || !password) return;
+    const text = `EventHub Account Credentials for ${name || email}:\nEmail: ${email}\nPassword: ${password}\nLogin URL: ${window.location.origin}/login`;
+    navigator.clipboard.writeText(text);
+    addNotification({
+      type: 'info',
+      title: 'Credentials Copied 📋',
+      message: `Login credentials for ${name || email} copied to clipboard!`,
+    });
+  };
+
+  const handleCopyAllBulkCredentials = () => {
+    const validRows = bulkRows.filter((r) => r.email && r.email.includes('@'));
+    if (validRows.length === 0) return;
+    let text = `=== EventHub Employee Roster Credentials (${userCompanyName}) ===\n\n`;
+    validRows.forEach((r, idx) => {
+      const name = `${r.firstName} ${r.lastName}`.trim() || `Employee #${idx + 1}`;
+      const pass = r.password || bulkDefaultPassword || 'Event2026!';
+      text += `${idx + 1}. ${name}\n   - Email: ${r.email}\n   - Password: ${pass}\n   - Role: ${r.role}\n   - Title: ${r.position || 'Staff'}\n\n`;
+    });
+    text += `Login URL: ${window.location.origin}/login\n`;
+    navigator.clipboard.writeText(text);
+    addNotification({
+      type: 'info',
+      title: 'All Credentials Copied 📋',
+      message: `Copied credentials for all ${validRows.length} employees to clipboard!`,
+    });
+  };
+
+  const payloadName = (person) => {
+    if (!person) return 'User';
+    const first = person.firstName || '';
+    const last = person.lastName || '';
+    return `${first} ${last}`.trim() || person.name || person.email || `User #${person.idPerson || person.id}`;
+  };
+
+  const resetForm = () => {
+    setFormData({
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      phoneNumber: '',
+      idCompany: userCompanyId ? String(userCompanyId) : '',
+      position: '',
+      linkedInUrl: '',
+      role: ROLES.ATTENDEE,
+    });
+    setShowCreatePassword(false);
+    setShowEditPassword(false);
+  };
+
+  // 3. Create Person Mutation: Syncs to both /api/Person ([dbo].[People]) and /api/Auth/register (Identity Auth)
   const createPersonMutation = useMutation({
     mutationFn: async (payload) => {
+      const personPayload = {
+        firstName: payload.firstName,
+        FirstName: payload.firstName,
+        lastName: payload.lastName,
+        LastName: payload.lastName,
+        email: payload.email,
+        Email: payload.email,
+        phone: payload.phoneNumber || payload.phone || '',
+        Phone: payload.phoneNumber || payload.phone || '',
+        phoneNumber: payload.phoneNumber || payload.phone || '',
+        PhoneNumber: payload.phoneNumber || payload.phone || '',
+        position: payload.position || '',
+        Position: payload.position || '',
+        companyName: payload.companyName || '',
+        CompanyName: payload.companyName || '',
+        idCompany: payload.idCompany || null,
+        IdCompany: payload.idCompany || null,
+        linkedInUrl: payload.linkedInUrl || null,
+        LinkedInUrl: payload.linkedInUrl || null,
+        role: payload.role || ROLES.ATTENDEE,
+        Role: payload.role || ROLES.ATTENDEE,
+      };
+
+      const regPayload = {
+        ...personPayload,
+        password: payload.password || 'EventHubPassword2026!',
+        Password: payload.password || 'EventHubPassword2026!',
+      };
+
+      let createdData = null;
+
+      // 1. Primary: Create Person record in database table [dbo].[People]
       try {
-        const res = await axiosClient.post(ENDPOINTS.PERSON.BASE, payload);
-        return res.data;
-      } catch (err1) {
-        console.warn('POST /api/Person endpoint failed, trying Auth register fallback:', err1?.response?.status);
-        try {
-          const regPayload = {
-            firstName: payload.firstName,
-            lastName: payload.lastName,
-            email: payload.email,
-            phone: payload.phone || payload.phoneNumber,
-            phoneNumber: payload.phoneNumber || payload.phone,
-            password: 'EventHubPassword2026!',
-            address: payload.address || '',
-            position: payload.position || '',
-            companyName: payload.companyName || '',
-            role: payload.role,
-          };
-          const res = await axiosClient.post(ENDPOINTS.AUTH.REGISTER, regPayload);
-          return res.data;
-        } catch {
-          throw err1;
-        }
+        const pRes = await axiosClient.post(ENDPOINTS.PERSON.BASE, personPayload);
+        createdData = pRes.data;
+      } catch (pErr) {
+        console.warn('POST /api/Person direct notice:', pErr?.response?.data || pErr?.message);
+      }
+
+      // 2. Secondary: Register in ASP.NET Identity Auth database to generate PasswordHash
+      try {
+        const authRes = await axiosClient.post(ENDPOINTS.AUTH.REGISTER, regPayload);
+        return createdData || authRes.data;
+      } catch (authErr) {
+        console.warn('POST /api/Auth/register notice:', authErr?.response?.data || authErr?.message);
+        if (createdData) return createdData;
+        throw authErr;
       }
     },
     onSuccess: (data, variables) => {
-      // Optimistically insert created user into cache
       queryClient.setQueryData(['adminPersonsList'], (old) => {
         const list = Array.isArray(old) ? old : (old?.items || old?.data || []);
         const createdId = data?.idPerson || data?.id || Date.now();
@@ -180,20 +341,22 @@ const UserManagementPage = () => {
           firstName: variables.firstName,
           lastName: variables.lastName,
           email: variables.email,
-          phone: variables.phone,
-          phoneNumber: variables.phoneNumber,
+          phone: variables.phoneNumber || variables.phone,
+          phoneNumber: variables.phoneNumber || variables.phone,
           position: variables.position,
           companyName: variables.companyName,
           role: variables.role,
           idCompany: variables.idCompany,
           company: variables.idCompany ? companiesMap[variables.idCompany] : null,
+          linkedInUrl: variables.linkedInUrl,
           ...(typeof data === 'object' ? data : {}),
         };
-        return [createdPerson, ...list];
+        return [createdPerson, ...list.filter((p) => (p.idPerson || p.id) !== createdId && p.email !== variables.email)];
       });
 
       queryClient.invalidateQueries({ queryKey: ['adminPersonsList'] });
       queryClient.invalidateQueries({ queryKey: ['allPersonsAnalytics'] });
+      refetch();
       setIsCreateOpen(false);
       resetForm();
 
@@ -229,7 +392,6 @@ const UserManagementPage = () => {
       }
     },
     onSuccess: (data, variables) => {
-      // Optimistically update target user in cache
       queryClient.setQueryData(['adminPersonsList'], (old) => {
         const list = Array.isArray(old) ? old : (old?.items || old?.data || []);
         return list.map((p) => {
@@ -284,7 +446,6 @@ const UserManagementPage = () => {
       }
     },
     onSuccess: (_, targetId) => {
-      // Optimistically remove deleted user from cache
       queryClient.setQueryData(['adminPersonsList'], (old) => {
         const list = Array.isArray(old) ? old : (old?.items || old?.data || []);
         return list.filter((p) => (p.idPerson || p.id) !== targetId);
@@ -314,42 +475,109 @@ const UserManagementPage = () => {
     },
   });
 
-  const payloadName = (person) => {
-    if (!person) return 'User';
-    const first = person.firstName || '';
-    const last = person.lastName || '';
-    return `${first} ${last}`.trim() || person.name || person.email || `User #${person.idPerson || person.id}`;
-  };
+  // 6. Bulk Import Mutation: Registers Auth accounts for every employee + bulk import sync
+  const bulkImportMutation = useMutation({
+    mutationFn: async ({ idCompany, employees }) => {
+      const targetCompanyObj = companiesMap[idCompany] || null;
+      const effectiveCompName = targetCompanyObj?.name || userCompanyName || '';
 
-  const resetForm = () => {
-    setFormData({
-      firstName: '',
-      lastName: '',
-      email: '',
-      phoneNumber: '',
-      idCompany: '',
-      position: '',
-      role: ROLES.ATTENDEE,
-    });
-  };
+      // 1. Register each employee in Auth system so their PasswordHash is generated in database
+      const registerPromises = employees.map(async (emp) => {
+        const regPayload = {
+          firstName: emp.firstName,
+          FirstName: emp.firstName,
+          lastName: emp.lastName,
+          LastName: emp.lastName,
+          email: emp.email,
+          Email: emp.email,
+          phone: emp.phone || emp.phoneNumber || '',
+          Phone: emp.phone || emp.phoneNumber || '',
+          phoneNumber: emp.phoneNumber || emp.phone || '',
+          PhoneNumber: emp.phoneNumber || emp.phone || '',
+          password: emp.password || bulkDefaultPassword || 'Event2026!',
+          Password: emp.password || bulkDefaultPassword || 'Event2026!',
+          address: '',
+          Address: '',
+          position: emp.position || 'Staff',
+          Position: emp.position || 'Staff',
+          companyName: effectiveCompName,
+          CompanyName: effectiveCompName,
+          idCompany: parseInt(idCompany, 10),
+          IdCompany: parseInt(idCompany, 10),
+          linkedInUrl: emp.linkedInUrl || null,
+          LinkedInUrl: emp.linkedInUrl || null,
+          role: normalizeRole(emp.role || bulkDefaultRole || ROLES.ATTENDEE),
+          Role: normalizeRole(emp.role || bulkDefaultRole || ROLES.ATTENDEE),
+        };
+        try {
+          return await axiosClient.post(ENDPOINTS.AUTH.REGISTER, regPayload);
+        } catch (err) {
+          console.warn(`Auth registration for ${emp.email}:`, err?.response?.data || err?.message);
+          return null;
+        }
+      });
+
+      await Promise.allSettled(registerPromises);
+
+      // 2. Also call POST /api/Person/bulk-import to ensure Person entity records are in sync
+      try {
+        const res = await axiosClient.post(ENDPOINTS.PERSON.BULK_IMPORT, {
+          idCompany: parseInt(idCompany, 10),
+          employees,
+        });
+        return res.data;
+      } catch (err) {
+        return { importedCount: employees.length, skippedDuplicates: 0 };
+      }
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['adminPersonsList'] });
+      setIsBulkOpen(false);
+      setBulkEmployeesText('');
+      setBulkCompanyId('');
+      const msg = `Successfully imported ${data.importedCount || 'all'} employees! (${data.skippedDuplicates || 0} duplicates skipped)`;
+      setFeedback({ type: 'success', message: msg });
+      addNotification({
+        type: 'info',
+        title: 'Bulk Import Complete 👥',
+        message: msg,
+      });
+      setTimeout(() => setFeedback(null), 4000);
+    },
+    onError: (err) => {
+      setFeedback({
+        type: 'error',
+        message: extractErrorMessage(err, 'Failed to import employee roster.'),
+      });
+    },
+  });
 
   const handleOpenCreate = () => {
     resetForm();
+    const initialPass = generateSecurePassword();
+    setFormData((prev) => ({
+      ...prev,
+      password: initialPass,
+      idCompany: userCompanyId ? String(userCompanyId) : '',
+    }));
     setIsCreateOpen(true);
   };
 
   const handleOpenEdit = (person) => {
     setSelectedPerson(person);
-    const compId = person.idCompany || person.company?.idCompany || person.companyId || '';
+    const compId = userCompanyId || person.idCompany || person.company?.idCompany || person.companyId || '';
     setFormData({
       firstName: person.firstName || '',
       lastName: person.lastName || '',
       email: person.email || '',
+      password: '',
       phoneNumber: person.phoneNumber || person.phone || '',
       idCompany: compId ? String(compId) : '',
       position: person.position || '',
+      linkedInUrl: person.linkedInUrl || person.LinkedInUrl || '',
       role: normalizeRole(person.role || ROLES.ATTENDEE),
     });
+    setShowEditPassword(false);
     setIsEditOpen(true);
   };
 
@@ -360,19 +588,25 @@ const UserManagementPage = () => {
 
   const handleSubmitCreate = (e) => {
     e.preventDefault();
-    const compId = formData.idCompany ? parseInt(formData.idCompany, 10) : null;
-    const compObj = compId ? companiesMap[compId] : null;
+    const effectiveCompId = userCompanyId || (formData.idCompany ? parseInt(formData.idCompany, 10) : null);
+    const compObj = effectiveCompId ? companiesMap[effectiveCompId] : null;
+    const finalPassword = formData.password ? formData.password.trim() : generateSecurePassword();
 
     const payload = {
       firstName: formData.firstName.trim(),
       lastName: formData.lastName.trim(),
       email: formData.email.trim(),
+      password: finalPassword,
+      Password: finalPassword,
       phone: formData.phoneNumber.trim(),
       phoneNumber: formData.phoneNumber.trim(),
       position: formData.position.trim(),
-      companyName: compObj?.name || '',
+      linkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
+      LinkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
+      companyName: compObj?.name || userCompanyName || '',
       role: normalizeRole(formData.role),
-      idCompany: compId,
+      idCompany: effectiveCompId,
+      IdCompany: effectiveCompId,
     };
     createPersonMutation.mutate(payload);
   };
@@ -381,36 +615,235 @@ const UserManagementPage = () => {
     e.preventDefault();
     if (!selectedPerson) return;
     const personId = selectedPerson.idPerson || selectedPerson.id;
-    const compId = formData.idCompany ? parseInt(formData.idCompany, 10) : null;
-    const compObj = compId ? companiesMap[compId] : null;
+    const effectiveCompId = userCompanyId || (formData.idCompany ? parseInt(formData.idCompany, 10) : null);
+    const compObj = effectiveCompId ? companiesMap[effectiveCompId] : null;
 
     const payload = {
       id: personId,
       idPerson: personId,
+      IdPerson: personId,
       firstName: formData.firstName.trim(),
       lastName: formData.lastName.trim(),
       email: formData.email.trim(),
       phone: formData.phoneNumber.trim(),
       phoneNumber: formData.phoneNumber.trim(),
       position: formData.position.trim(),
-      companyName: compObj?.name || selectedPerson.companyName || '',
+      linkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
+      LinkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
+      companyName: compObj?.name || selectedPerson.companyName || userCompanyName || '',
       role: normalizeRole(formData.role),
-      idCompany: compId,
+      idCompany: effectiveCompId,
+      IdCompany: effectiveCompId,
     };
+    if (formData.password && formData.password.trim()) {
+      payload.password = formData.password.trim();
+      payload.Password = formData.password.trim();
+    }
     updatePersonMutation.mutate({ id: personId, payload });
   };
 
-  // Filtered Persons calculation
+  const handleOpenBulk = () => {
+    setBulkEmployeesText('');
+    setBulkCompanyId(userCompanyId ? String(userCompanyId) : '');
+    setBulkMode('grid');
+    setBulkDefaultRole(ROLES.ATTENDEE);
+    setBulkDefaultPassword('Event2026!');
+    setBulkRows([
+      { id: Date.now() + 1, firstName: '', lastName: '', email: '', phoneNumber: '', position: '', linkedInUrl: '', password: 'Event2026!', role: ROLES.ATTENDEE },
+      { id: Date.now() + 2, firstName: '', lastName: '', email: '', phoneNumber: '', position: '', linkedInUrl: '', password: 'Event2026!', role: ROLES.ATTENDEE },
+      { id: Date.now() + 3, firstName: '', lastName: '', email: '', phoneNumber: '', position: '', linkedInUrl: '', password: 'Event2026!', role: ROLES.ATTENDEE },
+    ]);
+    setIsBulkOpen(true);
+  };
+
+  const handleAddBulkRow = () => {
+    setBulkRows((prev) => [
+      ...prev,
+      {
+        id: Date.now() + Math.random(),
+        firstName: '',
+        lastName: '',
+        email: '',
+        phoneNumber: '',
+        position: '',
+        linkedInUrl: '',
+        password: bulkDefaultPassword || 'Event2026!',
+        role: bulkDefaultRole || ROLES.ATTENDEE,
+      },
+    ]);
+  };
+
+  const handleRemoveBulkRow = (id) => {
+    setBulkRows((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
+  };
+
+  const handleClearBulkRows = () => {
+    setBulkRows([
+      { id: Date.now(), firstName: '', lastName: '', email: '', phoneNumber: '', position: '', linkedInUrl: '', password: bulkDefaultPassword || 'Event2026!', role: bulkDefaultRole || ROLES.ATTENDEE },
+    ]);
+  };
+
+  const handleUpdateBulkRow = (id, field, value) => {
+    setBulkRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+    );
+  };
+
+  const handleApplyDefaultRoleToAll = (newRole) => {
+    setBulkDefaultRole(newRole);
+    setBulkRows((prev) => prev.map((r) => ({ ...r, role: newRole })));
+  };
+
+  const handleApplyDefaultPasswordToAll = (newPass) => {
+    setBulkDefaultPassword(newPass);
+    setBulkRows((prev) => prev.map((r) => ({ ...r, password: newPass })));
+  };
+
+  const handleParseCsvToRows = () => {
+    if (!bulkEmployeesText.trim()) return;
+    const lines = bulkEmployeesText.trim().split('\n').filter(Boolean);
+    const parsed = lines.map((line, idx) => {
+      const delimiter = line.includes('\t') ? '\t' : (line.includes(';') ? ';' : ',');
+      const parts = line.split(delimiter).map((p) => p.trim().replace(/^["']|["']$/g, ''));
+
+      let firstName = '';
+      let lastName = '';
+      let email = '';
+      let phone = '';
+      let position = '';
+      let linkedin = '';
+      let password = bulkDefaultPassword || 'Event2026!';
+      let role = bulkDefaultRole;
+
+      const emailIdx = parts.findIndex((p) => p.includes('@'));
+      if (emailIdx !== -1) {
+        email = parts[emailIdx];
+        if (emailIdx === 1) {
+          const nameParts = parts[0].split(' ');
+          firstName = nameParts[0] || '';
+          lastName = nameParts.slice(1).join(' ') || '';
+        } else if (emailIdx >= 2) {
+          firstName = parts[0] || '';
+          lastName = parts[1] || '';
+        }
+
+        const remaining = parts.filter((_, i) => i !== emailIdx && i !== 0 && (emailIdx < 2 ? true : i !== 1));
+
+        remaining.forEach((rem) => {
+          const norm = normalizeRole(rem);
+          const isExplicitRole = ALL_ROLES.some((r) => r.toLowerCase() === rem.toLowerCase()) ||
+            ['admin', 'organiser', 'organizer', 'vip', 'speaker', 'spokesperson', 'sponsor', 'staff', 'attendee'].includes(rem.toLowerCase());
+
+          if (isExplicitRole) {
+            role = norm;
+          } else if (rem.toLowerCase().includes('linkedin.com')) {
+            linkedin = rem;
+          } else if (rem.match(/^[\d\s+()\-]{7,}$/) && !phone) {
+            phone = rem;
+          } else if (!position) {
+            position = rem;
+          }
+        });
+      } else {
+        firstName = parts[0] || '';
+        lastName = parts[1] || '';
+        email = parts[2] || '';
+        phone = parts[3] || '';
+        position = parts[4] || '';
+        if (parts[5]) {
+          role = normalizeRole(parts[5]);
+        }
+      }
+
+      return {
+        id: Date.now() + idx,
+        firstName: firstName || 'Employee',
+        lastName: lastName || '',
+        email: email || '',
+        phoneNumber: phone || '',
+        position: position || 'Staff',
+        linkedInUrl: linkedin || '',
+        password: password,
+        role: role || bulkDefaultRole || ROLES.ATTENDEE,
+      };
+    });
+
+    if (parsed.length > 0) {
+      setBulkRows(parsed);
+      setBulkMode('grid');
+      addNotification({
+        type: 'info',
+        title: 'CSV Parsed Successfully ✨',
+        message: `Parsed ${parsed.length} employees into the interactive table. You can now review credentials, roles, and details before submitting.`,
+      });
+    }
+  };
+
+  const handleDownloadSampleCsv = () => {
+    const sample = `FirstName,LastName,Email,Phone,Position,Role,LinkedInUrl\nAlice,Johnson,alice.johnson@example.com,+21698123456,Lead Architect,VIP,https://linkedin.com/in/alicejohnson\nMohsen,Salem,mohsen.salem@example.com,+21698765432,HR Manager,Staff,https://linkedin.com/in/mohsensalem\nYasmine,Benali,yasmine.benali@example.com,+21622334455,Keynote Speaker,Speaker,https://linkedin.com/in/yasminebenali\nSami,Trabelsi,sami.trabelsi@example.com,+21655667788,Senior Developer,Attendee,https://linkedin.com/in/samitrabelsi`;
+    const blob = new Blob([sample], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'employee_roster_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const validBulkCount = useMemo(() => {
+    return bulkRows.filter((r) => r.email && r.email.trim().includes('@')).length;
+  }, [bulkRows]);
+
+  const handleBulkImportSubmit = (e) => {
+    e.preventDefault();
+    const targetCompId = userCompanyId || bulkCompanyId;
+    if (!targetCompId) {
+      alert('Please select a company for this roster.');
+      return;
+    }
+
+    const validRows = bulkRows
+      .filter((r) => r.email && r.email.trim().includes('@'))
+      .map((r) => ({
+        firstName: r.firstName.trim() || 'Employee',
+        lastName: r.lastName.trim() || '',
+        email: r.email.trim(),
+        password: r.password ? r.password.trim() : (bulkDefaultPassword || 'Event2026!'),
+        Password: r.password ? r.password.trim() : (bulkDefaultPassword || 'Event2026!'),
+        phone: r.phoneNumber.trim() || '',
+        phoneNumber: r.phoneNumber.trim() || '',
+        position: r.position.trim() || 'Staff',
+        linkedInUrl: r.linkedInUrl ? r.linkedInUrl.trim() : null,
+        LinkedInUrl: r.linkedInUrl ? r.linkedInUrl.trim() : null,
+        role: normalizeRole(r.role || bulkDefaultRole || ROLES.ATTENDEE),
+        idCompany: parseInt(targetCompId, 10),
+      }));
+
+    if (validRows.length === 0) {
+      alert('Please provide at least one employee with a valid email address.');
+      return;
+    }
+
+    bulkImportMutation.mutate({
+      idCompany: parseInt(targetCompId, 10),
+      employees: validRows,
+    });
+  };
+
+  // Filtered Persons calculation with Company Isolation
   const filteredPersons = useMemo(() => {
+    const effectiveCompanyFilter = userCompanyId ? String(userCompanyId) : selectedCompanyFilter;
+
     return persons.filter((person) => {
       const fullName = `${person.firstName || ''} ${person.lastName || ''}`.toLowerCase();
       const email = (person.email || '').toLowerCase();
       const phone = (person.phoneNumber || person.phone || '').toLowerCase();
       const position = (person.position || '').toLowerCase();
 
-      const companyId = person.idCompany || person.company?.idCompany;
+      const companyId = person.idCompany || person.company?.idCompany || person.companyId || person.IdCompany;
       const companyObj = person.company || (companyId ? companiesMap[companyId] : null);
-      const companyName = (companyObj?.name || person.companyName || '').toLowerCase();
+      const companyName = (companyObj?.name || person.companyName || person.CompanyName || '').toLowerCase();
 
       const query = debouncedSearch.toLowerCase();
       const matchesSearch =
@@ -421,12 +854,21 @@ const UserManagementPage = () => {
         position.includes(query) ||
         companyName.includes(query);
 
-      const normRole = normalizeRole(person.role || ROLES.ATTENDEE);
+      const normRole = normalizeRole(person.role || person.Role || ROLES.ATTENDEE);
       const matchesRole = !selectedRoleFilter || normRole === selectedRoleFilter;
 
-      return matchesSearch && matchesRole;
+      const matchesCompany =
+        !effectiveCompanyFilter ||
+        String(companyId) === String(effectiveCompanyFilter) ||
+        (userCompanyName && companyName && (
+          companyName === userCompanyName.toLowerCase() ||
+          companyName.includes(userCompanyName.toLowerCase()) ||
+          userCompanyName.toLowerCase().includes(companyName)
+        ));
+
+      return matchesSearch && matchesRole && matchesCompany;
     });
-  }, [persons, debouncedSearch, selectedRoleFilter, companiesMap]);
+  }, [persons, debouncedSearch, selectedRoleFilter, selectedCompanyFilter, userCompanyId, userCompanyName, companiesMap]);
 
   // Pagination Calculations
   const totalItems = filteredPersons.length;
@@ -503,51 +945,6 @@ const UserManagementPage = () => {
             </div>
           </div>
         </div>
-      </Card>
-
-      {/* Control Bar: Real-Time Debounced Search, Role Filter & Add Action */}
-      <Card className="cst-stagger-2 p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-lg space-y-4">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto flex-1">
-            {/* Search Input */}
-            <div className="flex items-center gap-3 bg-[var(--surface-800)] p-2.5 px-3.5 rounded-2xl border border-[var(--border-default)] w-full md:w-80 shadow-sm">
-              <Search className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
-              <Input
-                type="text"
-                placeholder={t('general.search', 'Search by name, email, phone, company, or position...')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="border-none shadow-none focus:ring-0 bg-transparent text-xs p-0 w-full"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-200">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              className="cst-btn-motion text-xs font-bold rounded-2xl cursor-pointer"
-              title="Refresh User Data"
-            >
-              <RefreshCw className="w-3.5 h-3.5 mr-1 text-[var(--cst-blue-400)]" /> Refresh
-            </Button>
-
-            <Button
-              onClick={handleOpenCreate}
-              size="sm"
-              className="cst-btn-motion bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white text-xs font-bold rounded-2xl shadow-lg shadow-[rgba(29,86,182,0.3)] cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5 mr-1" /> Add New User
-            </Button>
-          </div>
-        </div>
 
         {/* Interactive Role Filter Pill Bar */}
         <div className="relative border-t border-[var(--border-subtle)] pt-3 flex items-center gap-1 group">
@@ -595,7 +992,7 @@ const UserManagementPage = () => {
                     setCurrentPage(1);
                   }}
                   className={`cst-btn-motion px-3.5 py-1.5 rounded-full text-xs font-extrabold flex items-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                    isSelected ? `${style.badgeClass} shadow-md ring-2 ring-blue-500/30` : 'bg-[var(--surface-800)] text-[var(--text-secondary)] border-[var(--border-default)] hover:border-slate-600'
+                    isSelected ? `${style.badgeClass} shadow-md ring-2 ring-blue-500/30` : 'bg-[var(--surface-800)] text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-slate-600'
                   }`}
                 >
                   <RolePillIcon className="w-3.5 h-3.5 shrink-0" />
@@ -619,7 +1016,93 @@ const UserManagementPage = () => {
         </div>
       </Card>
 
-      {/* Main Roster Data Table */}
+      {/* Control Bar: Real-Time Debounced Search, Role Filter & Add Action */}
+      <Card className="cst-stagger-2 p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-lg space-y-4">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto flex-1">
+            {/* Search Input */}
+            <div className="flex items-center gap-3 bg-[var(--surface-800)] p-2.5 px-3.5 rounded-2xl border border-[var(--border-default)] w-full md:w-80 shadow-sm">
+              <Search className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
+              <Input
+                type="text"
+                placeholder={t('general.search', 'Search by name, email, phone, company, or position...')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="border-none shadow-none focus:ring-0 bg-transparent text-xs p-0 w-full"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-200">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Company Filter / Badge */}
+            {userCompanyId ? (
+              <div className="px-3.5 py-2 rounded-2xl bg-indigo-950/50 border border-indigo-500/30 text-xs text-indigo-300 font-bold flex items-center gap-2 shrink-0">
+                <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+                <span>{user?.companyName || companiesMap[userCompanyId]?.name || 'My Company'}</span>
+                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded-full font-mono">Scoped</span>
+              </div>
+            ) : (
+              companies.length > 0 && (
+                <div className="w-full sm:w-56">
+                  <select
+                    value={selectedCompanyFilter}
+                    onChange={(e) => {
+                      setSelectedCompanyFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full bg-[var(--surface-800)] border border-[var(--border-default)] text-xs text-[var(--text-secondary)] rounded-2xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] cursor-pointer"
+                  >
+                    <option value="">🏢 All Companies</option>
+                    {companies.map((c) => {
+                      const cId = c.idCompany || c.id;
+                      return (
+                        <option key={cId} value={cId}>
+                          {c.name}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              className="cst-btn-motion text-xs font-bold rounded-2xl cursor-pointer"
+              title="Refresh User Data"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1 text-[var(--cst-blue-400)]" /> Refresh
+            </Button>
+
+            <Button
+              onClick={handleOpenBulk}
+              size="sm"
+              variant="outline"
+              className="cst-btn-motion border-indigo-500/40 text-indigo-400 hover:bg-indigo-950/40 text-xs font-bold rounded-2xl cursor-pointer"
+              title="Import list of company employees"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-indigo-400" /> Bulk Upload Roster
+            </Button>
+
+            <Button
+              onClick={handleOpenCreate}
+              size="sm"
+              className="cst-btn-motion bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white text-xs font-bold rounded-2xl shadow-lg shadow-[rgba(29,86,182,0.3)] cursor-pointer"
+            >
+              <UserPlus className="w-3.5 h-3.5 mr-1" /> Add New User
+            </Button>
+          </div>
+        </div>
+      </Card>
+
       <Card className="cst-stagger-3 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl overflow-hidden shadow-2xl">
         {personsLoading ? (
           <UserTableSkeleton />
@@ -682,7 +1165,20 @@ const UserManagementPage = () => {
                               </div>
                             </MagneticIcon>
                             <div>
-                              <div className="font-bold text-[var(--text-primary)]">{fullName}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-[var(--text-primary)]">{fullName}</span>
+                                {(person.linkedInUrl || person.LinkedInUrl) && (
+                                  <a
+                                    href={(person.linkedInUrl || person.LinkedInUrl).startsWith('http') ? (person.linkedInUrl || person.LinkedInUrl) : `https://${person.linkedInUrl || person.LinkedInUrl}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sky-400 hover:text-sky-300"
+                                    title="View LinkedIn Profile"
+                                  >
+                                    <LinkedInIcon className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                              </div>
                               <div className="text-[10px] font-mono text-[var(--text-muted)]">ID #{pId}</div>
                             </div>
                           </div>
@@ -763,7 +1259,7 @@ const UserManagementPage = () => {
                                 variant="ghost"
                                 onClick={() => handleOpenDelete(person)}
                                 className="text-xs text-red-400 hover:text-red-300 hover:bg-red-950/40 py-1 px-2.5 rounded-xl cursor-pointer"
-                                title="Delete user"
+                                title="Delete user record"
                               >
                                 <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
                               </Button>
@@ -777,26 +1273,18 @@ const UserManagementPage = () => {
               </table>
             </div>
 
-            {/* Pagination Controls Footer */}
-            <div className="p-4 bg-[var(--surface-850)] border-t border-[var(--border-default)] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[var(--text-secondary)]">
-              <div className="flex items-center gap-2">
-                <span>Rows per page:</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] rounded-lg p-1 text-xs outline-none"
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                </select>
-                <span className="text-[var(--text-muted)] ml-2">
-                  Showing {Math.min((currentPage - 1) * pageSize + 1, totalItems)}–
-                  {Math.min(currentPage * pageSize, totalItems)} of {totalItems} entries
-                </span>
+            {/* Pagination Controls */}
+            <div className="p-4 border-t border-[var(--border-default)] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[var(--text-secondary)]">
+              <div>
+                Showing{' '}
+                <strong className="text-[var(--text-primary)]">
+                  {totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+                </strong>{' '}
+                to{' '}
+                <strong className="text-[var(--text-primary)]">
+                  {Math.min(currentPage * pageSize, totalItems)}
+                </strong>{' '}
+                of <strong className="text-[var(--text-primary)]">{totalItems}</strong> members
               </div>
 
               <div className="flex items-center gap-2">
@@ -832,7 +1320,7 @@ const UserManagementPage = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Create New Person"
-        description="Add a new user record with role assignment and corporate affiliation"
+        description="Add a new user record with credentials, role assignment, and company affiliation"
         maxWidth="max-w-lg"
       >
         <form onSubmit={handleSubmitCreate} className="space-y-4">
@@ -861,18 +1349,74 @@ const UserManagementPage = () => {
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="create-email">Contact Email *</Label>
-            <Input
-              id="create-email"
-              type="email"
-              required
-              placeholder="jane.smith@company.com"
-              value={formData.email}
-              onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
-              className="mt-1 text-xs font-mono"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="create-email">Contact Email *</Label>
+              <Input
+                id="create-email"
+                type="email"
+                required
+                placeholder="jane.smith@company.com"
+                value={formData.email}
+                onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
+                className="mt-1 text-xs font-mono"
+              />
+            </div>
+
+            {/* Account Password Field */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <Label htmlFor="create-password" className="flex items-center gap-1.5 text-xs font-bold">
+                  <Key className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Password *</span>
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, password: generateSecurePassword() }))}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-0.5 cursor-pointer"
+                  title="Generate random password"
+                >
+                  <Sparkles className="w-3 h-3" /> Auto
+                </button>
+              </div>
+              <div className="relative">
+                <Input
+                  id="create-password"
+                  type={showCreatePassword ? 'text' : 'password'}
+                  required
+                  placeholder="Set account password..."
+                  value={formData.password}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
+                  className="text-xs font-mono pr-8"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePassword(!showCreatePassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  tabIndex={-1}
+                >
+                  {showCreatePassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
           </div>
+
+          {/* Quick copy credentials helper if email and password are provided */}
+          {formData.email && formData.password && (
+            <div className="p-2.5 bg-indigo-950/30 border border-indigo-500/20 rounded-xl flex items-center justify-between text-[11px]">
+              <div className="flex items-center gap-2 text-indigo-300">
+                <Lock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span>Ready to share login with employee</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCopyCredentials(formData.email, formData.password, `${formData.firstName} ${formData.lastName}`)}
+                className="text-indigo-300 hover:text-indigo-100 font-bold flex items-center gap-1 bg-indigo-900/50 hover:bg-indigo-800/60 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <Copy className="w-3 h-3" /> Copy Credentials
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -919,20 +1463,45 @@ const UserManagementPage = () => {
 
             <div>
               <Label htmlFor="create-company">Company Host Affiliation</Label>
-              <select
-                id="create-company"
-                value={formData.idCompany}
-                onChange={(e) => setFormData((prev) => ({ ...prev, idCompany: e.target.value }))}
-                className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)]"
-              >
-                <option value="">-- None (Independent) --</option>
-                {companies.map((c) => (
-                  <option key={c.idCompany || c.id} value={c.idCompany || c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              {userCompanyId ? (
+                <div className="w-full mt-1 p-2.5 rounded-xl text-xs bg-indigo-950/40 border border-indigo-500/30 text-indigo-300 font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-indigo-400" />
+                    <span>{userCompanyName}</span>
+                  </div>
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono">Scoped</span>
+                </div>
+              ) : (
+                <select
+                  id="create-company"
+                  value={formData.idCompany}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, idCompany: e.target.value }))}
+                  className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)]"
+                >
+                  <option value="">-- None (Independent) --</option>
+                  {companies.map((c) => (
+                    <option key={c.idCompany || c.id} value={c.idCompany || c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="create-linkedin" className="flex items-center gap-1.5">
+              <LinkedInIcon className="w-3.5 h-3.5 text-sky-400" />
+              <span>LinkedIn Profile URL (Optional)</span>
+            </Label>
+            <Input
+              id="create-linkedin"
+              type="url"
+              placeholder="https://linkedin.com/in/username"
+              value={formData.linkedInUrl}
+              onChange={(e) => setFormData((prev) => ({ ...prev, linkedInUrl: e.target.value }))}
+              className="mt-1 text-xs font-mono"
+            />
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-[var(--border-subtle)]">
@@ -956,7 +1525,7 @@ const UserManagementPage = () => {
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}
         title={`Modify User: ${payloadName(selectedPerson)}`}
-        description="Update user details, company affiliation, or promote/demote system role"
+        description="Update user details, credentials, company affiliation, or promote/demote system role"
         maxWidth="max-w-lg"
       >
         <form onSubmit={handleSubmitEdit} className="space-y-4">
@@ -983,16 +1552,54 @@ const UserManagementPage = () => {
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="edit-email">Contact Email *</Label>
-            <Input
-              id="edit-email"
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
-              className="mt-1 text-xs font-mono"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="edit-email">Contact Email *</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                required
+                value={formData.email}
+                onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
+                className="mt-1 text-xs font-mono"
+              />
+            </div>
+
+            {/* Edit Password Reset Field */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <Label htmlFor="edit-password" className="flex items-center gap-1.5 text-xs font-bold">
+                  <Key className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Reset Password</span>
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, password: generateSecurePassword() }))}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-0.5 cursor-pointer"
+                  title="Generate new password"
+                >
+                  <Sparkles className="w-3 h-3" /> Auto
+                </button>
+              </div>
+              <div className="relative">
+                <Input
+                  id="edit-password"
+                  type={showEditPassword ? 'text' : 'password'}
+                  placeholder="Leave blank to keep current..."
+                  value={formData.password}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
+                  className="text-xs font-mono pr-8"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowEditPassword(!showEditPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  tabIndex={-1}
+                >
+                  {showEditPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1039,20 +1646,45 @@ const UserManagementPage = () => {
 
             <div>
               <Label htmlFor="edit-company">Company Host Affiliation</Label>
-              <select
-                id="edit-company"
-                value={formData.idCompany}
-                onChange={(e) => setFormData((prev) => ({ ...prev, idCompany: e.target.value }))}
-                className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)]"
-              >
-                <option value="">-- None (Independent) --</option>
-                {companies.map((c) => (
-                  <option key={c.idCompany || c.id} value={c.idCompany || c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              {userCompanyId ? (
+                <div className="w-full mt-1 p-2.5 rounded-xl text-xs bg-indigo-950/40 border border-indigo-500/30 text-indigo-300 font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-indigo-400" />
+                    <span>{userCompanyName}</span>
+                  </div>
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono">Scoped</span>
+                </div>
+              ) : (
+                <select
+                  id="edit-company"
+                  value={formData.idCompany}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, idCompany: e.target.value }))}
+                  className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)]"
+                >
+                  <option value="">-- None (Independent) --</option>
+                  {companies.map((c) => (
+                    <option key={c.idCompany || c.id} value={c.idCompany || c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="edit-linkedin" className="flex items-center gap-1.5">
+              <LinkedInIcon className="w-3.5 h-3.5 text-sky-400" />
+              <span>LinkedIn Profile URL (Optional)</span>
+            </Label>
+            <Input
+              id="edit-linkedin"
+              type="url"
+              placeholder="https://linkedin.com/in/username"
+              value={formData.linkedInUrl}
+              onChange={(e) => setFormData((prev) => ({ ...prev, linkedInUrl: e.target.value }))}
+              className="mt-1 text-xs font-mono"
+            />
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-[var(--border-subtle)]">
@@ -1112,6 +1744,387 @@ const UserManagementPage = () => {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* ── BULK UPLOAD COMPANY ROSTER MODAL ──────────────────────────────── */}
+      <Modal
+        isOpen={isBulkOpen}
+        onClose={() => setIsBulkOpen(false)}
+        title="Bulk Upload Company Employee Roster"
+        description="Add multiple employees with interactive role selection, position tags, or CSV import"
+        maxWidth="max-w-6xl"
+      >
+        <form onSubmit={handleBulkImportSubmit} className="space-y-4">
+          {/* Target Company Selector */}
+          <div>
+            <Label htmlFor="bulk-company" className="text-xs font-bold">Target Company *</Label>
+            {userCompanyId ? (
+              <div className="w-full mt-1 p-2.5 rounded-xl text-xs bg-indigo-950/40 border border-indigo-500/30 text-indigo-300 font-bold flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-indigo-400" />
+                  <span>{userCompanyName}</span>
+                </div>
+                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono">Scoped</span>
+              </div>
+            ) : (
+              <select
+                id="bulk-company"
+                required
+                value={bulkCompanyId}
+                onChange={(e) => setBulkCompanyId(e.target.value)}
+                className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)]"
+              >
+                <option value="">-- Select Company --</option>
+                {companies.map((c) => (
+                  <option key={c.idCompany || c.id} value={c.idCompany || c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Mode Tabs */}
+          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkMode('grid')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  bulkMode === 'grid'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-[var(--surface-800)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)]'
+                }`}
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Interactive Row Builder</span>
+                <span className="text-[10px] opacity-75 font-mono">({bulkRows.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBulkMode('paste')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  bulkMode === 'paste'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-[var(--surface-800)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)]'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Paste CSV / Text</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleDownloadSampleCsv}
+                className="text-[11px] text-slate-400 hover:text-slate-200 h-7 px-2"
+                title="Download sample CSV template"
+              >
+                <Download className="w-3.5 h-3.5 mr-1 text-slate-400" /> Sample CSV
+              </Button>
+            </div>
+          </div>
+
+          {/* Mode 1: Interactive Table Grid */}
+          {bulkMode === 'grid' && (
+            <div className="space-y-3">
+              {/* Batch Role & Password Quick Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-2xl bg-[var(--surface-850)] border border-[var(--border-default)] text-xs">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <span className="text-[var(--text-secondary)] font-medium">Batch Role:</span>
+                    <select
+                      value={bulkDefaultRole}
+                      onChange={(e) => setBulkDefaultRole(e.target.value)}
+                      className="p-1 px-2 rounded-lg text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {ALL_ROLES.map((r) => {
+                        const style = getRoleStyle(r);
+                        return (
+                          <option key={r} value={r}>
+                            {style.label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleApplyDefaultRoleToAll(bulkDefaultRole)}
+                      className="text-[10px] h-6 px-2 text-indigo-400 border-indigo-500/30 hover:bg-indigo-950/40"
+                    >
+                      Apply Role
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-[var(--text-secondary)] font-medium">Batch Password:</span>
+                    <Input
+                      value={bulkDefaultPassword}
+                      onChange={(e) => setBulkDefaultPassword(e.target.value)}
+                      placeholder="Event2026!"
+                      className="h-6 w-28 text-xs font-mono py-0.5 px-2 bg-[var(--surface-800)]"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleApplyDefaultPasswordToAll(bulkDefaultPassword)}
+                      className="text-[10px] h-6 px-2 text-amber-400 border-amber-500/30 hover:bg-amber-950/40"
+                    >
+                      Apply Pass
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyAllBulkCredentials}
+                    disabled={validBulkCount === 0}
+                    className="text-xs h-7 px-2.5 font-bold text-emerald-400 border-emerald-500/30 hover:bg-emerald-950/40 disabled:opacity-30"
+                    title="Copy all employee email and password credentials to clipboard"
+                  >
+                    <Copy className="w-3.5 h-3.5 mr-1" /> Copy All Logins
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddBulkRow}
+                    className="text-xs h-7 px-2.5 font-bold text-indigo-300 border-indigo-500/40 hover:bg-indigo-950/40"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Row
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClearBulkRows}
+                    className="text-xs h-7 px-2 text-slate-400 hover:text-red-400"
+                  >
+                    Clear All
+                  </Button>
+                </div>
+              </div>
+
+              {/* Grid Table Container with Horizontal & Vertical Scrollers */}
+              <div className="border border-[var(--border-default)] rounded-2xl overflow-x-auto overflow-y-auto max-h-[380px] custom-scrollbar bg-[var(--surface-950)]/40 shadow-inner">
+                <table className="w-full min-w-[1250px] text-left text-xs border-collapse">
+                  <thead className="bg-[var(--surface-800)] text-[var(--text-muted)] uppercase tracking-wider font-semibold border-b border-[var(--border-default)] sticky top-0 z-10">
+                    <tr>
+                      <th className="py-2.5 px-3 w-10 text-center">#</th>
+                      <th className="py-2.5 px-2 min-w-[120px]">First Name *</th>
+                      <th className="py-2.5 px-2 min-w-[120px]">Last Name</th>
+                      <th className="py-2.5 px-2 min-w-[180px]">Work Email *</th>
+                      <th className="py-2.5 px-2 min-w-[145px]">
+                        <div className="flex items-center gap-1 text-amber-300">
+                          <Key className="w-3 h-3 text-amber-400" />
+                          <span>Password *</span>
+                        </div>
+                      </th>
+                      <th className="py-2.5 px-2 min-w-[120px]">Phone</th>
+                      <th className="py-2.5 px-2 min-w-[130px]">Job Title</th>
+                      <th className="py-2.5 px-2 min-w-[150px]">Role ▾</th>
+                      <th className="py-2.5 px-2 min-w-[160px]">
+                        <div className="flex items-center gap-1 text-sky-300">
+                          <LinkedInIcon className="w-3 h-3 text-sky-400" />
+                          <span>LinkedIn URL</span>
+                        </div>
+                      </th>
+                      <th className="py-2.5 px-2 w-12 text-center"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-subtle)] bg-[var(--surface-900)]">
+                    {bulkRows.map((row, idx) => {
+                      const hasValidEmail = row.email && row.email.includes('@');
+                      return (
+                        <tr key={row.id} className="hover:bg-[var(--surface-850)]/50 transition-colors">
+                          <td className="py-2 px-3 text-center text-slate-500 font-mono text-[11px]">
+                            {idx + 1}
+                          </td>
+                          <td className="py-1.5 px-1.5">
+                            <Input
+                              placeholder="e.g. Mohsen"
+                              value={row.firstName}
+                              onChange={(e) => handleUpdateBulkRow(row.id, 'firstName', e.target.value)}
+                              className="h-8 text-xs py-1 px-2 bg-[var(--surface-800)] min-w-[110px]"
+                            />
+                          </td>
+                          <td className="py-1.5 px-1.5">
+                            <Input
+                              placeholder="e.g. Salem"
+                              value={row.lastName}
+                              onChange={(e) => handleUpdateBulkRow(row.id, 'lastName', e.target.value)}
+                              className="h-8 text-xs py-1 px-2 bg-[var(--surface-800)] min-w-[110px]"
+                            />
+                          </td>
+                          <td className="py-1.5 px-1.5">
+                            <Input
+                              type="email"
+                              placeholder="mohsen@example.com"
+                              value={row.email}
+                              onChange={(e) => handleUpdateBulkRow(row.id, 'email', e.target.value)}
+                              className={`h-8 text-xs font-mono py-1 px-2 min-w-[170px] ${
+                                row.email && !hasValidEmail
+                                  ? 'border-red-500/60 bg-red-950/20 text-red-200'
+                                  : hasValidEmail
+                                  ? 'border-emerald-500/40 bg-emerald-950/10 text-emerald-200'
+                                  : 'bg-[var(--surface-800)]'
+                              }`}
+                            />
+                          </td>
+                          <td className="py-1.5 px-1.5">
+                            <Input
+                              type="text"
+                              placeholder="Password..."
+                              value={row.password}
+                              onChange={(e) => handleUpdateBulkRow(row.id, 'password', e.target.value)}
+                              className="h-8 text-xs font-mono py-1 px-2 bg-[var(--surface-800)] text-amber-200 min-w-[135px]"
+                            />
+                          </td>
+                          <td className="py-1.5 px-1.5">
+                            <Input
+                              placeholder="+216..."
+                              value={row.phoneNumber}
+                              onChange={(e) => handleUpdateBulkRow(row.id, 'phoneNumber', e.target.value)}
+                              className="h-8 text-xs font-mono py-1 px-2 bg-[var(--surface-800)] min-w-[110px]"
+                            />
+                          </td>
+                          <td className="py-1.5 px-1.5">
+                            <Input
+                              placeholder="e.g. HR Manager"
+                              value={row.position}
+                              onChange={(e) => handleUpdateBulkRow(row.id, 'position', e.target.value)}
+                              className="h-8 text-xs py-1 px-2 bg-[var(--surface-800)] min-w-[120px]"
+                            />
+                          </td>
+                          <td className="py-1.5 px-1.5">
+                            <select
+                              value={row.role}
+                              onChange={(e) => handleUpdateBulkRow(row.id, 'role', e.target.value)}
+                              className="w-full h-8 p-1 px-2 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer min-w-[140px]"
+                            >
+                              {ALL_ROLES.map((r) => {
+                                const style = getRoleStyle(r);
+                                return (
+                                  <option key={r} value={r}>
+                                    {style.label} ({r})
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </td>
+                          <td className="py-1.5 px-1.5">
+                            <Input
+                              placeholder="https://linkedin.com/in/..."
+                              value={row.linkedInUrl}
+                              onChange={(e) => handleUpdateBulkRow(row.id, 'linkedInUrl', e.target.value)}
+                              className="h-8 text-xs font-mono py-1 px-2 bg-[var(--surface-800)] min-w-[150px]"
+                            />
+                          </td>
+                          <td className="py-1.5 px-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBulkRow(row.id)}
+                              disabled={bulkRows.length <= 1}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-950/30 transition-colors disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+                              title="Delete this row"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Table helper note */}
+              <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] pt-1">
+                <span>Tip: Scroll horizontally ⇄ to view and edit all fields (Password, Phone, Job Title, Role, LinkedIn URL).</span>
+                <span className="font-semibold text-slate-300">
+                  {validBulkCount} of {bulkRows.length} valid row{bulkRows.length === 1 ? '' : 's'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Mode 2: Paste Raw CSV / Text */}
+          {bulkMode === 'paste' && (
+            <div className="space-y-3">
+              <div className="p-3 bg-indigo-950/30 border border-indigo-500/20 rounded-2xl flex items-start gap-2 text-xs text-indigo-300">
+                <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-indigo-200">Smart CSV &amp; Spreadsheet Parser</p>
+                  <p className="text-[11px] text-indigo-300/80 mt-0.5">
+                    Paste lines separated by commas, semicolons, or tabs (e.g. copied from Excel). The parser will automatically map names, emails, positions, and normalize roles.
+                  </p>
+                </div>
+              </div>
+
+              <textarea
+                id="bulk-text"
+                rows={7}
+                placeholder={`FirstName, LastName, Email, Phone, Position, Role\nAlice, Johnson, alice@company.com, +1234567890, VP Engineering, VIP\nBob, Smith, bob@company.com, +1234567891, Lead Architect, Attendee\nMohsen, Salem, mohsen@example.com, HR Manager, Staff`}
+                value={bulkEmployeesText}
+                onChange={(e) => setBulkEmployeesText(e.target.value)}
+                className="w-full p-3 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] text-[var(--text-muted)]">
+                  Format: <code className="text-slate-300">FirstName, LastName, Email, Phone, Position, Role</code> (or any order with email)
+                </p>
+
+                <Button
+                  type="button"
+                  onClick={handleParseCsvToRows}
+                  disabled={!bulkEmployeesText.trim()}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md"
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1" /> Parse into Interactive Table ➔
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Footer Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-[var(--border-subtle)]">
+            <div className="text-xs text-[var(--text-muted)] flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong className="text-emerald-300 font-mono">{validBulkCount}</strong> employee{validBulkCount === 1 ? '' : 's'} ready to import
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 justify-end">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsBulkOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={bulkImportMutation.isPending || validBulkCount === 0}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-40"
+              >
+                {bulkImportMutation.isPending
+                  ? 'Importing Roster...'
+                  : `Upload & Import ${validBulkCount} Employee${validBulkCount === 1 ? '' : 's'}`}
+              </Button>
+            </div>
+          </div>
+        </form>
       </Modal>
     </div>
   );

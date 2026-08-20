@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
 import { useNotification } from '../../context/NotificationContext';
+import { useAuth } from '../../context/AuthContext';
 import { to24HourTimeSpan, TIME_OPTIONS_24H } from '../../utils/timeUtils';
 
 import { AddressLocationPicker } from '../../components/maps/AddressLocationPicker';
@@ -33,13 +34,15 @@ const CreateEventPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { addNotification } = useNotification();
+  const { user, isSuperAdmin } = useAuth();
+  const userCompanyId = !isSuperAdmin && (user?.idCompany || user?.companyId) ? (user.idCompany || user.companyId) : null;
 
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [programPdfFile, setProgramPdfFile] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    idCompany: '',
+    idCompany: userCompanyId ? String(userCompanyId) : '',
     date: '',
     startTime: '09:00',
     endTime: '18:00',
@@ -242,26 +245,36 @@ const CreateEventPage = () => {
 
               <div>
                 <label className={FIELD_LABEL}>Host Enterprise *</label>
-                <div className="relative">
-                  <select
-                    name="idCompany"
-                    value={formData.idCompany}
-                    onChange={handleChange}
-                    required
-                    disabled={createEventMutation.isPending || companiesLoading}
-                    className={`${FIELD_INPUT} appearance-none pr-10 cursor-pointer`}
-                  >
-                    <option value="" className="bg-slate-900 text-slate-400">
-                      {companiesLoading ? 'Loading enterprise hosts...' : 'Select host enterprise...'}
-                    </option>
-                    {companies.map((c) => (
-                      <option key={c.idCompany || c.id} value={c.idCompany || c.id} className="bg-slate-900 text-slate-100">
-                        {c.name}
+                {userCompanyId ? (
+                  <div className="w-full px-4 py-2.5 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl text-xs font-bold text-indigo-300 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-indigo-400" />
+                      <span>{user?.companyName || selectedCompany?.name || 'My Company'}</span>
+                    </div>
+                    <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono">Scoped</span>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <select
+                      name="idCompany"
+                      value={formData.idCompany}
+                      onChange={handleChange}
+                      required
+                      disabled={createEventMutation.isPending || companiesLoading}
+                      className={`${FIELD_INPUT} appearance-none pr-10 cursor-pointer`}
+                    >
+                      <option value="" className="bg-slate-900 text-slate-400">
+                        {companiesLoading ? 'Loading enterprise hosts...' : 'Select host enterprise...'}
                       </option>
-                    ))}
-                  </select>
-                  <Building2 className="w-4 h-4 text-[var(--text-muted)] absolute right-3.5 top-3 pointer-events-none" />
-                </div>
+                      {companies.map((c) => (
+                        <option key={c.idCompany || c.id} value={c.idCompany || c.id} className="bg-slate-900 text-slate-100">
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Building2 className="w-4 h-4 text-[var(--text-muted)] absolute right-3.5 top-3 pointer-events-none" />
+                  </div>
+                )}
               </div>
 
               <div>

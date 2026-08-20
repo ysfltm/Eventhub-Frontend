@@ -285,6 +285,8 @@ const EventsPage = () => {
     },
   });
 
+  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('');
+
   const handleInputChange = (e) => {
     setFormData({
       ...formData,
@@ -312,8 +314,26 @@ const EventsPage = () => {
     return timeString ? timeString.substring(0, 5) : '';
   };
 
+  // Company-scoped Event Filtering
+  const userCompanyId = user?.idCompany || user?.companyId;
+  const isScopedToCompany = !isSuperAdmin && Boolean(userCompanyId);
+
   const filteredEvents = eventsList.filter((evt) => {
     if (!evt) return false;
+
+    const evtCompanyId = evt.idCompany || evt.IdCompany || evt.company?.idCompany || evt.company?.IdCompany;
+
+    // 1. Strict Company Isolation for non-superadmins (Organisers, Attendees, Staff, etc.)
+    if (isScopedToCompany && evtCompanyId && String(evtCompanyId) !== String(userCompanyId)) {
+      return false;
+    }
+
+    // 2. Admin Company Filter selector
+    if (selectedCompanyFilter && evtCompanyId && String(evtCompanyId) !== String(selectedCompanyFilter)) {
+      return false;
+    }
+
+    // 3. Text Search Query
     const q = (searchQuery || '').toLowerCase();
     const title = (evt.title || evt.Title || '').toLowerCase();
     const desc = (evt.description || evt.Description || '').toLowerCase();
@@ -337,19 +357,31 @@ const EventsPage = () => {
             <div className="flex items-center gap-2 text-[var(--cst-blue-400)] text-xs font-bold uppercase tracking-widest mb-1">
               <Sparkles className="w-4 h-4 text-[var(--cst-blue-400)]" />
               <span>{t('events.badge', 'Enterprise Event Directory')}</span>
+              {isScopedToCompany && (
+                <span className="bg-[var(--cst-blue-900)]/60 text-[var(--cst-blue-300)] px-2.5 py-0.5 rounded-full text-[10px] border border-[var(--cst-blue-700)]/50">
+                  🏢 {user?.companyName || 'Company'} View
+                </span>
+              )}
             </div>
             <h1 className="text-3xl font-black tracking-tight text-[var(--text-primary)]">
               {t('events.title', 'Explore Corporate Events & Summits')}
             </h1>
             <p className="text-[var(--text-secondary)] text-xs mt-1">
-              {t('events.subtitle', 'Discover upcoming technology conferences, keynote sessions, and claim your digital entry pass.')}
+              {isScopedToCompany
+                ? 'Displaying events hosted specifically for your organization.'
+                : t('events.subtitle', 'Discover upcoming technology conferences, keynote sessions, and claim your digital entry pass.')}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             {canCreateEvents && (
               <Button
-                onClick={() => setShowCreateForm(!showCreateForm)}
+                onClick={() => {
+                  if (isScopedToCompany && !formData.idCompany) {
+                    setFormData((prev) => ({ ...prev, idCompany: String(userCompanyId) }));
+                  }
+                  setShowCreateForm(!showCreateForm);
+                }}
                 className="cst-btn-motion flex items-center gap-2 bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white font-bold text-xs py-3 px-5 rounded-2xl shadow-lg shadow-[rgba(29,86,182,0.3)] cursor-pointer"
               >
                 <Plus className="h-4 w-4 text-white" />
@@ -361,7 +393,7 @@ const EventsPage = () => {
 
         {/* Search & Filter Bar */}
         <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-900/60 p-3 rounded-2xl border border-slate-800 backdrop-blur-md">
-          <div className="relative w-full">
+          <div className="relative w-full flex-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               type="text"
@@ -371,6 +403,36 @@ const EventsPage = () => {
               className="pl-10 border-slate-800 bg-slate-950/60 text-slate-100"
             />
           </div>
+
+          {/* Company Filter / Scoped Badge */}
+          {isScopedToCompany ? (
+            <div className="px-3.5 py-2.5 bg-indigo-950/50 border border-indigo-500/30 text-xs text-indigo-300 font-bold rounded-xl flex items-center gap-2 shrink-0">
+              <Building2 className="w-4 h-4 text-indigo-400" />
+              <span>{user?.companyName || 'My Company'}</span>
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded-full font-mono">Scoped</span>
+            </div>
+          ) : (
+            isSuperAdmin && companiesList.length > 0 && (
+              <div className="w-full sm:w-64 shrink-0">
+                <select
+                  value={selectedCompanyFilter}
+                  onChange={(e) => setSelectedCompanyFilter(e.target.value)}
+                  className="w-full bg-slate-950/80 border border-slate-800 text-xs text-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">🏢 All Hosting Companies</option>
+                  {companiesList.map((c) => {
+                    const cId = c.idCompany || c.IdCompany || c.id;
+                    const cName = c.name || c.Name;
+                    return (
+                      <option key={cId} value={cId}>
+                        {cName}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )
+          )}
         </div>
 
         {/* Create Event Form Drawer / Modal */}
@@ -410,21 +472,28 @@ const EventsPage = () => {
 
                   <div className="space-y-1.5">
                     <Label htmlFor="idCompany">Host Company</Label>
-                    <Select
-                      id="idCompany"
-                      name="idCompany"
-                      value={formData.idCompany}
-                      onChange={handleInputChange}
-                      required
-                      disabled={createEventMutation.isPending || companiesLoading}
-                    >
-                      <option value="" className="bg-slate-900 text-slate-400">Select host enterprise...</option>
-                      {companiesList.map((company) => (
-                        <option key={company.idCompany || company.id} value={company.idCompany || company.id} className="bg-slate-900 text-slate-200">
-                          {company.name || company.Name || 'Enterprise Host'}
-                        </option>
-                      ))}
-                    </Select>
+                    {isScopedToCompany ? (
+                      <div className="w-full p-2.5 bg-slate-950/60 border border-indigo-500/30 text-indigo-300 font-bold text-xs rounded-xl flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-indigo-400" />
+                        <span>{user?.companyName || 'My Company'}</span>
+                      </div>
+                    ) : (
+                      <Select
+                        id="idCompany"
+                        name="idCompany"
+                        value={formData.idCompany}
+                        onChange={handleInputChange}
+                        required
+                        disabled={createEventMutation.isPending || companiesLoading}
+                      >
+                        <option value="" className="bg-slate-900 text-slate-400">Select host enterprise...</option>
+                        {companiesList.map((company) => (
+                          <option key={company.idCompany || company.id} value={company.idCompany || company.id} className="bg-slate-900 text-slate-200">
+                            {company.name || company.Name || 'Enterprise Host'}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
                   </div>
                 </div>
 

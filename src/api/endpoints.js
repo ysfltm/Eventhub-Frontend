@@ -11,6 +11,7 @@ export const ENDPOINTS = {
   PERSON: {
     BASE: '/Person',
     BY_ID: (id) => `/Person/${id}`,
+    BULK_IMPORT: '/Person/bulk-import',
   },
   // Companies
   COMPANY: {
@@ -30,6 +31,7 @@ export const ENDPOINTS = {
     BY_ID: (id) => `/Participation/${id}`,
     BY_EVENT: (eventId) => `/Participation/event/${eventId}`,
     CHECK_IN: '/Participation/check-in',
+    UPDATE_STATUS: (participationId) => `/Participation/${participationId}/status`,
     SEND_PASS: (participationId) => `/Participation/${participationId}/send-pass`,
     SEND_ALL_PASSES: (eventId) => `/Participation/event/${eventId}/send-all-passes`,
     SEND_INVITATION: (participationId) => `/Participation/${participationId}/send-invitation`,
@@ -43,6 +45,13 @@ export const ENDPOINTS = {
     BY_PARTICIPATION: (participationId) => `/Invitation/participation/${participationId}`,
     EMAIL_STATUS: (invitationId, sent = true) => `/Invitation/${invitationId}/email-status?sent=${sent}`,
     WHATSAPP_STATUS: (invitationId, sent = true) => `/Invitation/${invitationId}/whatsapp-status?sent=${sent}`,
+  },
+  // Live Kahoot & Real-Time Polling Engine
+  LIVE_POLL: {
+    CREATE: '/LivePoll/create',
+    BY_EVENT: (eventId) => `/LivePoll/event/${eventId}`,
+    VOTE: '/LivePoll/vote',
+    CLOSE: (pollId) => `/LivePoll/close/${pollId}`,
   },
   // Event & Platform Analytics
   ANALYTICS: {

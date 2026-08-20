@@ -34,9 +34,27 @@ export const AuthProvider = ({ children }) => {
           decoded['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ||
           decoded.role;
 
+        const rawCompanyId =
+          storedUser.idCompany ??
+          storedUser.IdCompany ??
+          storedUser.companyId ??
+          decoded.CompanyId ??
+          decoded.companyId ??
+          decoded['CompanyId'] ??
+          null;
+
+        const parsedCompanyId =
+          rawCompanyId !== null && rawCompanyId !== undefined && rawCompanyId !== ''
+            ? parseInt(rawCompanyId, 10)
+            : null;
+
         const userData = {
           id: parseInt(rawId, 10) || rawId,
           idPerson: parseInt(rawId, 10) || rawId,
+          idCompany: parsedCompanyId,
+          companyId: parsedCompanyId,
+          companyName: storedUser.companyName || storedUser.CompanyName || null,
+          linkedInUrl: storedUser.linkedInUrl || storedUser.LinkedInUrl || null,
           email:
             storedUser.email ||
             decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ||
@@ -117,4 +135,12 @@ export const AuthProvider = ({ children }) => {
       {children}
     </AuthContext.Provider>
   );
+};
+
+export const useAuth = () => {
+  const context = React.useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
