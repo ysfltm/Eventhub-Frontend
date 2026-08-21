@@ -28,6 +28,7 @@ import { Card } from '../../components/ui/Card';
 import { Alert } from '../../components/ui/Alert';
 import { Modal } from '../../components/ui/Modal';
 import { Label } from '../../components/ui/Label';
+import { PersonAutocomplete } from '../../components/ui/PersonAutocomplete';
 import { useAuth } from '../../context/AuthContext';
 import {
   sendSinglePass,
@@ -46,7 +47,7 @@ const AttendeeRosterPage = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedPersonId, setSelectedPersonId] = useState('');
+  const [selectedPersonIds, setSelectedPersonIds] = useState([]);
   const [dispatchStatus, setDispatchStatus] = useState(null);
 
   // 1. Fetch Event Details
@@ -133,23 +134,72 @@ const AttendeeRosterPage = () => {
     return map;
   }, [companies]);
 
-  // Add Participant Mutation: POST /api/Participation
+  // Set of person IDs already registered in this event to avoid confusion
+  const existingPersonIds = React.useMemo(() => {
+    const set = new Set();
+    attendees.forEach((a) => {
+      const pId = a.idPerson || a.person?.idPerson || a.person?.id;
+      if (pId) set.add(String(pId));
+    });
+    return set;
+  }, [attendees]);
+
+  // Identify display name of currently scoped company
+  const effectiveCompanyName = React.useMemo(() => {
+    const effectiveCompanyId = userCompanyId || event?.idCompany || event?.company?.idCompany || event?.companyId;
+    if (effectiveCompanyId && companiesMap[effectiveCompanyId]) {
+      return companiesMap[effectiveCompanyId].name;
+    }
+    if (user?.companyName) return user.companyName;
+    if (event?.company?.name) return event.company.name;
+    return '';
+  }, [userCompanyId, event, companiesMap, user]);
+
+  // Add Participant Mutation (Single or Bulk): POST /api/Participation
   const addParticipantMutation = useMutation({
-    mutationFn: async (payload) => {
-      const res = await axiosClient.post(ENDPOINTS.PARTICIPATION.BASE, payload);
-      return res.data;
+    mutationFn: async (personIds) => {
+      const ids = Array.isArray(personIds) ? personIds : [personIds];
+      const parsedEventId = parseInt(activeEventId, 10);
+
+      const results = await Promise.allSettled(
+        ids.map((id) => {
+          const pId = parseInt(id, 10);
+          return axiosClient.post(ENDPOINTS.PARTICIPATION.BASE, {
+            idEvent: parsedEventId,
+            idPerson: isNaN(pId) ? 1 : pId,
+          });
+        })
+      );
+
+      const successful = results.filter((r) => r.status === 'fulfilled');
+      const failed = results.filter((r) => r.status === 'rejected');
+
+      if (successful.length === 0 && failed.length > 0) {
+        const errorReason = failed[0].reason?.response?.data?.message || failed[0].reason?.message || 'Failed to add participant(s).';
+        throw new Error(errorReason);
+      }
+
+      return {
+        total: ids.length,
+        successfulCount: successful.length,
+        failedCount: failed.length,
+      };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['eventParticipations', activeEventId] });
       setIsAddModalOpen(false);
-      setSelectedPersonId('');
-      setDispatchStatus({ type: 'success', message: 'Participant successfully added to event!' });
+      setSelectedPersonIds([]);
+      const message =
+        data.total > 1
+          ? `Successfully registered ${data.successfulCount} participant(s) to event roster!${data.failedCount > 0 ? ` (${data.failedCount} already registered)` : ''}`
+          : 'Participant successfully added to event!';
+      setDispatchStatus({ type: 'success', message });
       setTimeout(() => setDispatchStatus(null), 4000);
     },
     onError: (err) => {
       setDispatchStatus({
         type: 'error',
-        message: err.response?.data?.message || 'Failed to add participant.',
+        message: err.message || err.response?.data?.message || 'Failed to add participant(s).',
       });
     },
   });
@@ -270,12 +320,8 @@ const AttendeeRosterPage = () => {
 
   const handleAddParticipant = (e) => {
     e.preventDefault();
-    if (!selectedPersonId) return;
-    const pId = parseInt(selectedPersonId, 10);
-    addParticipantMutation.mutate({
-      idEvent: parseInt(activeEventId, 10),
-      idPerson: isNaN(pId) ? 1 : pId,
-    });
+    if (!selectedPersonIds || selectedPersonIds.length === 0) return;
+    addParticipantMutation.mutate(selectedPersonIds);
   };
 
   /**
@@ -809,65 +855,64 @@ const AttendeeRosterPage = () => {
         )}
       </Card>
 
-      {/* Add Participant Modal */}
+      {/* Add Participant Modal (Single & Bulk) */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title="Add Participant to Event"
-        description={`Register a new guest or attendee for Event #${activeEventId}`}
-        maxWidth="max-w-md"
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setSelectedPersonIds([]);
+        }}
+        title="Add Participants to Event"
+        description={`Register guests or attendees in bulk for Event #${activeEventId}`}
+        maxWidth="max-w-xl"
       >
-        <form onSubmit={handleAddParticipant} className="space-y-4">
+        <form onSubmit={handleAddParticipant} className="space-y-5">
           <div>
-            <Label htmlFor="person-id-select" className="text-xs">
-              Select Registered Person *
+            <Label htmlFor="person-autocomplete" className="text-xs mb-1.5 block">
+              Search & Select Registered People (Single or Bulk) *
             </Label>
-            {availablePersons.length > 0 ? (
-              <select
-                id="person-id-select"
-                required
-                value={selectedPersonId}
-                onChange={(e) => setSelectedPersonId(e.target.value)}
-                className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] font-medium"
-              >
-                <option value="">-- Select Person --</option>
-                {availablePersons.map((p) => {
-                  const pId = p.idPerson || p.id;
-                  const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.name || p.email;
-                  return (
-                    <option key={pId} value={pId}>
-                      {name} ({p.email || `ID #${pId}`})
-                    </option>
-                  );
-                })}
-              </select>
-            ) : (
-              <Input
-                id="person-id"
-                type="number"
-                required
-                placeholder="e.g. 1, 2, 5..."
-                value={selectedPersonId}
-                onChange={(e) => setSelectedPersonId(e.target.value)}
-                className="mt-1 text-xs font-mono"
-              />
-            )}
-            <p className="text-[11px] text-[var(--text-muted)] mt-1">
-              Select person record to issue digital event participation.
+
+            <PersonAutocomplete
+              persons={availablePersons}
+              selectedPersonIds={selectedPersonIds}
+              onSelectPersons={(ids) => setSelectedPersonIds(ids)}
+              existingPersonIds={existingPersonIds}
+              companyScopeName={effectiveCompanyName}
+              isSuperAdmin={isSuperAdmin}
+              placeholder="Type name (e.g. Sami, Youssef, Dhia), email, or ID..."
+              multiSelect={true}
+            />
+
+            <p className="text-[11px] text-[var(--text-muted)] mt-2">
+              Select one or multiple individuals to register them concurrently under your company scope.
             </p>
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-[var(--border-subtle)]">
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddModalOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsAddModalOpen(false);
+                setSelectedPersonIds([]);
+              }}
+            >
               Cancel
             </Button>
             <Button
               type="submit"
               size="sm"
-              disabled={addParticipantMutation.isPending || !selectedPersonId}
-              className="bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white"
+              disabled={addParticipantMutation.isPending || selectedPersonIds.length === 0}
+              className="bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white shadow-md"
             >
-              {addParticipantMutation.isPending ? 'Adding...' : 'Add Participant'}
+              {addParticipantMutation.isPending
+                ? 'Registering...'
+                : selectedPersonIds.length > 1
+                ? `Add ${selectedPersonIds.length} Participants`
+                : selectedPersonIds.length === 1
+                ? 'Add 1 Participant'
+                : 'Add Participant'}
             </Button>
           </div>
         </form>
