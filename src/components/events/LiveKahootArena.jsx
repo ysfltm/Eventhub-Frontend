@@ -522,7 +522,7 @@ export const LiveKahootArena = ({ eventId, eventTitle }) => {
               <Gamepad2 className="w-3.5 h-3.5" />
               <span>Interactive Live Poll &amp; Kahoot Arena</span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-black text-[var(--text-primary)] tracking-tight">
               {eventTitle ? `Live Arena: ${eventTitle}` : 'Interactive Event Arena'}
             </h1>
             <p className="text-xs text-[var(--text-secondary)]">
@@ -564,8 +564,8 @@ export const LiveKahootArena = ({ eventId, eventTitle }) => {
           {/* Question Banner */}
           <div className={`p-6 md:p-8 rounded-3xl text-center shadow-2xl relative overflow-hidden transition-all ${
             isPollActive
-              ? 'bg-slate-900 border-2 border-indigo-500/60 ring-2 ring-indigo-500/20'
-              : 'bg-slate-900/90 border-2 border-amber-500/40'
+              ? 'bg-[var(--bg-card)] border-2 border-indigo-500/60 ring-2 ring-indigo-500/20'
+              : 'bg-[var(--bg-card)] border-2 border-amber-500/40'
           }`}>
             <div className="text-[11px] font-black uppercase tracking-widest mb-2 flex items-center justify-center gap-2">
               {isPollActive ? (
@@ -581,7 +581,7 @@ export const LiveKahootArena = ({ eventId, eventTitle }) => {
               )}
             </div>
 
-            <h2 className="text-xl md:text-2xl font-black text-white leading-snug max-w-3xl mx-auto">
+            <h2 className="text-xl md:text-2xl font-black text-[var(--text-primary)] leading-snug max-w-3xl mx-auto">
               {pollData.question}
             </h2>
 
@@ -825,7 +825,7 @@ export const LiveKahootArena = ({ eventId, eventTitle }) => {
             <Trophy className="w-10 h-10" />
           </div>
           <div className="space-y-2 max-w-md mx-auto">
-            <h3 className="text-xl font-black text-white">
+            <h3 className="text-xl font-black text-[var(--text-primary)]">
               {isHost ? 'Launch a Live Question / Poll' : 'Kahoot Live Arena Lobby'}
             </h3>
             <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
@@ -850,7 +850,7 @@ export const LiveKahootArena = ({ eventId, eventTitle }) => {
           <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-indigo-400" />
-              <h3 className="text-base font-bold text-white">Event Organiser Question Builder</h3>
+              <h3 className="text-base font-bold text-[var(--text-primary)]">Event Organiser Question Builder</h3>
             </div>
             <span className="text-[10px] text-indigo-400 bg-indigo-950/60 border border-indigo-500/30 px-2.5 py-1 rounded-full font-mono font-bold">
               Organiser Exclusive
@@ -880,7 +880,7 @@ export const LiveKahootArena = ({ eventId, eventTitle }) => {
                   )}
                 </div>
                 <div>
-                  <h4 className="text-xs font-black text-white">Trivia Quiz</h4>
+                  <h4 className="text-xs font-black text-[var(--text-primary)]">Trivia Quiz</h4>
                   <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                     Multiple choices with 1 correct answer &amp; competitive scoring.
                   </p>
@@ -904,7 +904,7 @@ export const LiveKahootArena = ({ eventId, eventTitle }) => {
                   )}
                 </div>
                 <div>
-                  <h4 className="text-xs font-black text-white">Audience Opinion Poll</h4>
+                  <h4 className="text-xs font-black text-[var(--text-primary)]">Audience Opinion Poll</h4>
                   <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                     Agree/Disagree (A vs B) or 3+ options to measure consensus.
                   </p>
@@ -928,7 +928,7 @@ export const LiveKahootArena = ({ eventId, eventTitle }) => {
                   )}
                 </div>
                 <div>
-                  <h4 className="text-xs font-black text-white">True / False Duel</h4>
+                  <h4 className="text-xs font-black text-[var(--text-primary)]">True / False Duel</h4>
                   <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                     Fast 2-choice fact check with 1 correct answer.
                   </p>

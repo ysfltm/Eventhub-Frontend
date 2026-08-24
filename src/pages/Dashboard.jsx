@@ -105,9 +105,51 @@ const Dashboard = () => {
     user?.role === 'Admin' ||
     user?.role === 'EventOrganizer';
   const isSuperAdmin = normalizedRole === 'SuperAdmin';
-  const userCompanyId = !isSuperAdmin && (user?.idCompany || user?.companyId) ? (user.idCompany || user.companyId) : null;
 
-  // 1. Events query
+  // 1. Fetch Companies to resolve Company ID/Name
+  const { data: rawCompanies = [] } = useQuery({
+    queryKey: ['companiesListDashboard'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get(ENDPOINTS.COMPANY.BASE);
+        return Array.isArray(res.data) ? res.data : res.data?.items ?? [];
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  const companiesList = Array.isArray(rawCompanies)
+    ? rawCompanies
+    : Array.isArray(rawCompanies?.data)
+    ? rawCompanies.data
+    : Array.isArray(rawCompanies?.$values)
+    ? rawCompanies.$values
+    : [];
+
+  const effectiveUserCompanyId = React.useMemo(() => {
+    if (isSuperAdmin) return null;
+    if (user?.idCompany) return user.idCompany;
+    if (user?.companyId) return user.companyId;
+    if (user?.companyName && companiesList.length > 0) {
+      const match = companiesList.find(
+        (c) => c.name?.toLowerCase() === user.companyName.toLowerCase()
+      );
+      if (match) return match.idCompany || match.id;
+    }
+    return null;
+  }, [isSuperAdmin, user, companiesList]);
+
+  const userCompanyName = React.useMemo(() => {
+    if (user?.companyName) return user.companyName;
+    if (effectiveUserCompanyId) {
+      const match = companiesList.find((c) => String(c.idCompany || c.id) === String(effectiveUserCompanyId));
+      if (match?.name) return match.name;
+    }
+    return null;
+  }, [user, effectiveUserCompanyId, companiesList]);
+
+  // 2. Events query
   const {
     data: rawEvents = [],
     isLoading,
@@ -128,18 +170,25 @@ const Dashboard = () => {
     ? rawEvents.$values
     : [];
 
-  const events = rawEventsList.filter((evt) => {
-    if (!evt) return false;
-    if (userCompanyId) {
-      const evtCompId = evt.idCompany || evt.IdCompany || evt.company?.idCompany || evt.company?.IdCompany;
-      if (evtCompId && String(evtCompId) !== String(userCompanyId)) {
+  const events = React.useMemo(() => {
+    return rawEventsList.filter((evt) => {
+      if (!evt) return false;
+      if (effectiveUserCompanyId) {
+        const evtCompId = evt.idCompany || evt.IdCompany || evt.company?.idCompany || evt.company?.IdCompany;
+        const evtCompName = (evt.company?.name || evt.companyName || '').toLowerCase();
+        if (evtCompId) {
+          return String(evtCompId) === String(effectiveUserCompanyId);
+        }
+        if (userCompanyName && evtCompName) {
+          return evtCompName === userCompanyName.toLowerCase() || evtCompName.includes(userCompanyName.toLowerCase());
+        }
         return false;
       }
-    }
-    return true;
-  });
+      return true;
+    });
+  }, [rawEventsList, effectiveUserCompanyId, userCompanyName]);
 
-  // 2. Fetch pass count for attendees
+  // 3. Fetch pass count for attendees
   const { data: myPasses = [] } = useQuery({
     queryKey: ['myPasses', user?.idPerson || user?.id || user?.email],
     queryFn: () => fetchMyPasses(user),
@@ -259,9 +308,9 @@ const Dashboard = () => {
           <>
             <StatCard
               label={t('dashboard.totalHostedEvents', 'Total Hosted Events')}
-              value={isLoading ? '—' : (analytics?.totalEvents ?? events.length)}
+              value={isLoading ? '—' : (isSuperAdmin ? (analytics?.totalEvents ?? events.length) : events.length)}
               icon={Calendar}
-              subtext={t('dashboard.eventsRegistered', 'Events registered in engine')}
+              subtext={isSuperAdmin ? t('dashboard.eventsRegistered', 'Events registered in engine') : `${userCompanyName || 'Company'} hosted sessions`}
               colorScheme="blue"
             />
             <StatCard

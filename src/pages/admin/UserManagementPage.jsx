@@ -878,16 +878,38 @@ const UserManagementPage = () => {
     });
   };
 
-  // Filtered Persons calculation with Company Isolation
-  const filteredPersons = useMemo(() => {
+  // 1. Base Persons Scoped to Company (for privacy isolation and non-superadmin restrictions)
+  const scopedPersons = useMemo(() => {
     const effectiveCompanyFilter = userCompanyId ? String(userCompanyId) : selectedCompanyFilter;
 
+    if (!effectiveCompanyFilter && isSuperAdmin) {
+      return persons;
+    }
+
     return persons.filter((person) => {
+      const companyId = person.idCompany || person.company?.idCompany || person.companyId || person.IdCompany;
+      const companyObj = person.company || (companyId ? companiesMap[companyId] : null);
+      const companyName = (companyObj?.name || person.companyName || person.CompanyName || '').toLowerCase();
+
+      return (
+        !effectiveCompanyFilter ||
+        String(companyId) === String(effectiveCompanyFilter) ||
+        (userCompanyName && companyName && (
+          companyName === userCompanyName.toLowerCase() ||
+          companyName.includes(userCompanyName.toLowerCase()) ||
+          userCompanyName.toLowerCase().includes(companyName)
+        ))
+      );
+    });
+  }, [persons, selectedCompanyFilter, userCompanyId, userCompanyName, companiesMap, isSuperAdmin]);
+
+  // 2. Filtered Persons calculation (Search Query & Selected Role Filter) applied on scopedPersons
+  const filteredPersons = useMemo(() => {
+    return scopedPersons.filter((person) => {
       const fullName = `${person.firstName || ''} ${person.lastName || ''}`.toLowerCase();
       const email = (person.email || '').toLowerCase();
       const phone = (person.phoneNumber || person.phone || '').toLowerCase();
       const position = (person.position || '').toLowerCase();
-
       const companyId = person.idCompany || person.company?.idCompany || person.companyId || person.IdCompany;
       const companyObj = person.company || (companyId ? companiesMap[companyId] : null);
       const companyName = (companyObj?.name || person.companyName || person.CompanyName || '').toLowerCase();
@@ -904,18 +926,9 @@ const UserManagementPage = () => {
       const normRole = normalizeRole(person.role || person.Role || ROLES.ATTENDEE);
       const matchesRole = !selectedRoleFilter || normRole === selectedRoleFilter;
 
-      const matchesCompany =
-        !effectiveCompanyFilter ||
-        String(companyId) === String(effectiveCompanyFilter) ||
-        (userCompanyName && companyName && (
-          companyName === userCompanyName.toLowerCase() ||
-          companyName.includes(userCompanyName.toLowerCase()) ||
-          userCompanyName.toLowerCase().includes(companyName)
-        ));
-
-      return matchesSearch && matchesRole && matchesCompany;
+      return matchesSearch && matchesRole;
     });
-  }, [persons, debouncedSearch, selectedRoleFilter, selectedCompanyFilter, userCompanyId, userCompanyName, companiesMap]);
+  }, [scopedPersons, debouncedSearch, selectedRoleFilter, companiesMap]);
 
   // Pagination Calculations
   const totalItems = filteredPersons.length;
@@ -925,17 +938,17 @@ const UserManagementPage = () => {
     return filteredPersons.slice(start, start + pageSize);
   }, [filteredPersons, currentPage, pageSize]);
 
-  // Counter Badges Stats
+  // Counter Badges Stats (Calculated strictly from scopedPersons for privacy protection)
   const roleStats = useMemo(() => {
     const counts = {};
     ALL_ROLES.forEach((r) => { counts[r] = 0; });
-    persons.forEach((p) => {
+    scopedPersons.forEach((p) => {
       const r = normalizeRole(p.role || ROLES.ATTENDEE);
       if (counts[r] !== undefined) counts[r] += 1;
       else counts[ROLES.ATTENDEE] += 1;
     });
     return counts;
-  }, [persons]);
+  }, [scopedPersons]);
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -976,7 +989,7 @@ const UserManagementPage = () => {
           <div className="flex flex-wrap items-center gap-3">
             <div className="p-3.5 px-4 bg-[var(--surface-850)] border border-[var(--border-default)] rounded-2xl min-w-[105px] text-center shadow-md">
               <span className="text-[10px] font-bold uppercase text-[var(--text-muted)] block">{t('users.totalUsers', 'Total Users')}</span>
-              <span className="text-2xl font-black text-[var(--text-primary)]">{persons.length}</span>
+              <span className="text-2xl font-black text-[var(--text-primary)]">{scopedPersons.length}</span>
             </div>
             <div className="p-3.5 px-4 bg-[var(--surface-850)] border border-[var(--border-default)] rounded-2xl min-w-[105px] text-center shadow-md">
               <span className="text-[10px] font-bold uppercase text-[var(--cst-blue-400)] block">Admins &amp; Org</span>
@@ -1022,7 +1035,7 @@ const UserManagementPage = () => {
               }`}
             >
               <span>All Roles</span>
-              <span className="text-[10px] opacity-75 font-mono">({persons.length})</span>
+              <span className="text-[10px] opacity-75 font-mono">({scopedPersons.length})</span>
             </button>
 
             {ALL_ROLES.map((r) => {
