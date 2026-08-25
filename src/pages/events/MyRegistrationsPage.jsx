@@ -11,12 +11,16 @@ import {
   QrCode,
   CheckCircle2,
   XCircle,
+  CalendarClock,
+  ShieldCheck,
 } from 'lucide-react';
+import axiosClient from '../../api/axiosClient';
+import { ENDPOINTS } from '../../api/endpoints';
 import { AuthContext } from '../../context/AuthContext';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Alert } from '../../components/ui/Alert';
-import { fetchMyPasses, extractEventId, cancelParticipation, removeLocalClaimedPass } from '../../utils/passUtils';
+import { fetchMyPasses } from '../../utils/passUtils';
 import { useLanguage } from '../../context/LanguageContext';
 
 const MyRegistrationsPage = () => {
@@ -34,31 +38,56 @@ const MyRegistrationsPage = () => {
     queryFn: () => fetchMyPasses(user),
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: async ({ eventId, participationId }) => {
-      return await cancelParticipation(eventId, participationId);
+  // Interactive RSVP Status Mutation for Attendees (Confirm, Re-Confirm, Pending, Cancel)
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ participationId, status }) => {
+      const payload = { status, Status: status };
+      try {
+        const res = await axiosClient.patch(ENDPOINTS.PARTICIPATION.UPDATE_STATUS(participationId), payload);
+        return res.data;
+      } catch {
+        try {
+          const res = await axiosClient.put(ENDPOINTS.PARTICIPATION.UPDATE_STATUS(participationId), payload);
+          return res.data;
+        } catch {
+          const res = await axiosClient.put(ENDPOINTS.PARTICIPATION.BY_ID(participationId), payload);
+          return res.data;
+        }
+      }
     },
-    onSuccess: (data, variables) => {
-      const targetEvtId = variables?.eventId;
-      removeLocalClaimedPass(targetEvtId, user);
+    onMutate: async ({ participationId, status }) => {
+      await queryClient.cancelQueries({ queryKey: ['myPasses'] });
+      const previousPasses = queryClient.getQueryData(['myPasses', user?.idPerson || user?.id || user?.email]);
 
       queryClient.setQueriesData({ queryKey: ['myPasses'] }, (oldData) => {
-        if (!oldData) return [];
+        if (!oldData) return oldData;
         const list = Array.isArray(oldData) ? oldData : (oldData?.data || oldData?.$values || []);
-        return list.filter((p) => extractEventId(p) !== targetEvtId);
+        const updated = list.map((item) => {
+          const pId = item.idParticipation || item.idPass || item.id;
+          if (String(pId) === String(participationId)) {
+            return {
+              ...item,
+              status: status,
+              Status: status,
+              isCancelled: status === 'Cancelled',
+            };
+          }
+          return item;
+        });
+        return Array.isArray(oldData) ? updated : { ...oldData, data: updated };
       });
 
-      queryClient.invalidateQueries({ queryKey: ['myPasses'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-
-      alert(data?.message || 'Successfully cancelled event registration.');
+      return { previousPasses };
     },
-    onError: (err) => {
-      console.error('Cancel registration error:', err);
-      const serverMsg = typeof err.response?.data === 'string'
-        ? err.response.data
-        : (err.response?.data?.message || err.message || 'Failed to cancel registration.');
-      alert(`Cancellation Alert (${err.response?.status || 'Network Error'}):\n\n${serverMsg}`);
+    onError: (err, variables, context) => {
+      if (context?.previousPasses) {
+        queryClient.setQueryData(['myPasses', user?.idPerson || user?.id || user?.email], context.previousPasses);
+      }
+      console.error('Failed to update RSVP status:', err);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['myPasses'] });
+      queryClient.invalidateQueries({ queryKey: ['eventParticipations'] });
     },
   });
 
@@ -77,9 +106,49 @@ const MyRegistrationsPage = () => {
     return timeStr.substring(0, 5);
   };
 
+  const getStatusBadge = (pass) => {
+    const rawStatus = (
+      pass.status ||
+      (pass.checkInStatus || pass.isCheckedIn ? 'CheckedIn' : pass.isCancelled ? 'Cancelled' : 'Pending')
+    ).toLowerCase();
+
+    if (rawStatus.includes('check')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-cyan-950/60 border border-cyan-800/50 text-cyan-400">
+          <ShieldCheck className="w-3 h-3 text-cyan-400" /> Checked-In
+        </span>
+      );
+    }
+    if (rawStatus.includes('reconfirm') || rawStatus.includes('re-confirm')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-950/60 border border-purple-800/50 text-purple-300">
+          <CalendarClock className="w-3 h-3 text-purple-400" /> Re-Confirm
+        </span>
+      );
+    }
+    if (rawStatus === 'confirmed' || (rawStatus.includes('confirm') && !rawStatus.includes('reconfirm') && !rawStatus.includes('re-confirm'))) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-950/60 border border-emerald-800/50 text-emerald-400">
+          <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Confirmed
+        </span>
+      );
+    }
+    if (rawStatus.includes('cancel')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-950/60 border border-rose-800/50 text-rose-400">
+          <XCircle className="w-3 h-3 text-rose-400" /> Cancelled
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-950/60 border border-amber-800/50 text-amber-300">
+        <Clock className="w-3 h-3 text-amber-400" /> Pending RSVP
+      </span>
+    );
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
-
       {/* Header Banner */}
       <div className="cst-stagger-1 cst-hero-gradient border border-[var(--border-default)] p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -91,7 +160,7 @@ const MyRegistrationsPage = () => {
             {t('registrations.title', 'My Event Registrations')}
           </h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-md">
-            {t('registrations.subtitle', 'Manage your active session registrations and QR entry passes.')}
+            {t('registrations.subtitle', 'Manage your active session registrations and update your attendance status.')}
           </p>
         </div>
 
@@ -107,7 +176,7 @@ const MyRegistrationsPage = () => {
       {isLoading ? (
         <div className="py-20 text-center space-y-3">
           <div className="w-8 h-8 border-2 border-[var(--cst-blue-600)] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs text-[var(--text-secondary)]">Retrieving your digital passes...</p>
+          <p className="text-xs text-[var(--text-secondary)]">Retrieving your digital registrations...</p>
         </div>
       ) : isError ? (
         <Alert variant="destructive">
@@ -131,7 +200,24 @@ const MyRegistrationsPage = () => {
           {myPasses.map((pass) => {
             const event = pass.event || {};
             const passId = pass.idPass || pass.idParticipation;
-            const isCheckedIn = Boolean(pass.checkInStatus || pass.isCheckedIn);
+            const isCheckedIn = Boolean(
+              pass.checkInStatus ||
+              pass.isCheckedIn ||
+              pass.checkInTime ||
+              pass.CheckInTime ||
+              pass.status === 'CheckedIn' ||
+              pass.Status === 'CheckedIn'
+            );
+            const rawStatus = pass.status || (isCheckedIn ? 'CheckedIn' : pass.isCancelled ? 'Cancelled' : 'Pending');
+            const normalizedStatus = String(rawStatus).toLowerCase().replace('-', '') === 'reconfirm'
+              ? 'ReConfirm'
+              : rawStatus.toLowerCase().includes('confirm')
+              ? 'Confirmed'
+              : rawStatus.toLowerCase().includes('cancel')
+              ? 'Cancelled'
+              : rawStatus.toLowerCase().includes('check')
+              ? 'CheckedIn'
+              : 'Pending';
 
             return (
               <Card
@@ -140,13 +226,7 @@ const MyRegistrationsPage = () => {
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${isCheckedIn
-                        ? 'bg-emerald-950/60 border border-emerald-800/50 text-emerald-400'
-                        : 'bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/30 text-[var(--cst-blue-400)]'
-                      }`}>
-                      {isCheckedIn ? <CheckCircle2 className="w-3 h-3" /> : <Ticket className="w-3 h-3" />}
-                      {isCheckedIn ? t('passes.checkedIn', 'Checked In') : t('registrations.viewPass', 'View QR Pass')}
-                    </span>
+                    {getStatusBadge(pass)}
                     <span className="text-[11px] font-mono text-[var(--text-muted)]">Pass #{passId}</span>
                   </div>
 
@@ -177,44 +257,55 @@ const MyRegistrationsPage = () => {
                   </div>
                 </div>
 
-                <div className="pt-2 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-[var(--text-muted)]">Holder: {user?.email?.split('@')[0]}</span>
+                {/* RSVP Attendance Selector & View Pass Actions */}
+                <div className="pt-3 border-t border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <Button
-                      onClick={() => {
-                        const evId = extractEventId(pass) || event.idEvent || event.id;
-                        const partId = pass.idParticipation || pass.id;
-                        if (confirm(`Are you sure you want to cancel registration for '${event.title}'?`)) {
-                          cancelMutation.mutate({ eventId: evId, participationId: partId });
-                        }
-                      }}
-                      disabled={isCheckedIn || cancelMutation.isPending}
-                      variant="outline"
-                      size="sm"
-                      className="text-xs text-[var(--cst-red-400)] border-[var(--cst-red-600)]/40 hover:bg-[var(--cst-red-700)]/20"
-                      title={isCheckedIn ? 'Cannot cancel after door check-in' : 'Cancel Registration'}
-                    >
-                      <XCircle className="w-3.5 h-3.5 mr-1" />
-                      {t('registrations.cancelReg', 'Cancel')}
-                    </Button>
-                    <Button
-                      onClick={() => navigate(`/tickets/${passId}`)}
-                      size="sm"
-                      className="bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white text-xs"
-                    >
-                      <QrCode className="w-3.5 h-3.5 mr-1.5" />
-                      {t('registrations.viewPass', 'View QR Pass')}
-                    </Button>
+                    <span className="text-xs font-bold text-[var(--text-muted)]">RSVP:</span>
+                    {isCheckedIn ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-cyan-950/60 border border-cyan-800/50 text-cyan-300 text-xs font-bold"
+                        title="Checked in at venue turnstile - attendance status is permanently locked"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /> Checked-In (Locked)
+                      </span>
+                    ) : (
+                      <select
+                        value={normalizedStatus}
+                        disabled={updateStatusMutation.isPending}
+                        onChange={(e) => {
+                          updateStatusMutation.mutate({
+                            participationId: passId,
+                            status: e.target.value,
+                          });
+                        }}
+                        className="bg-[var(--surface-950)] border border-[var(--border-default)] text-xs font-semibold text-[var(--text-primary)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] cursor-pointer"
+                        title="Update your RSVP Attendance Status"
+                      >
+                        <option value="Confirmed">🟢 Confirm</option>
+                        <option value="ReConfirm">🟣 Re-Confirm</option>
+                        <option value="Pending">🟡 Pending</option>
+                        <option value="Cancelled">🔴 Cancel</option>
+                      </select>
+                    )}
                   </div>
+
+                  <Button
+                    onClick={() => navigate(`/tickets/${passId}`)}
+                    size="sm"
+                    className="bg-[var(--cst-blue-700)] hover:bg-[var(--cst-blue-600)] text-white text-xs"
+                  >
+                    <QrCode className="w-3.5 h-3.5 mr-1.5" />
+                    {t('registrations.viewPass', 'View QR Pass')}
+                  </Button>
                 </div>
               </Card>
             );
           })}
         </div>
       )}
-
     </div>
   );
 };
 
 export default MyRegistrationsPage;
+

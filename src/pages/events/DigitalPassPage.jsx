@@ -1,6 +1,6 @@
 import React, { useState, useContext, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar,
   MapPin,
@@ -13,6 +13,7 @@ import {
   Clock3,
   Ban,
   Award,
+  CalendarClock,
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { ENDPOINTS } from '../../api/endpoints';
@@ -45,6 +46,7 @@ const QRCodeDisplay = ({ value, size = 180 }) => {
 const DigitalPassPage = () => {
   const { id } = useParams();
   const { user } = useContext(AuthContext);
+  const queryClient = useQueryClient();
   const { t, dir } = useLanguage();
   const printRef = useRef(null);
   const [isCertModalOpen, setIsCertModalOpen] = useState(false);
@@ -80,6 +82,30 @@ const DigitalPassPage = () => {
   });
 
   const pass = matchedPassFromList || directParticipation;
+
+  // Attendee RSVP Status Mutation
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ participationId, status }) => {
+      const payload = { status, Status: status };
+      try {
+        const res = await axiosClient.patch(ENDPOINTS.PARTICIPATION.UPDATE_STATUS(participationId), payload);
+        return res.data;
+      } catch {
+        try {
+          const res = await axiosClient.put(ENDPOINTS.PARTICIPATION.UPDATE_STATUS(participationId), payload);
+          return res.data;
+        } catch {
+          const res = await axiosClient.put(ENDPOINTS.PARTICIPATION.BY_ID(participationId), payload);
+          return res.data;
+        }
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['myPasses'] });
+      queryClient.invalidateQueries({ queryKey: ['directParticipation', id] });
+      queryClient.invalidateQueries({ queryKey: ['eventParticipations'] });
+    },
+  });
 
   // 3. Tertiary fallback: Fetch event if missing from pass
   const eventIdFromPass = extractEventId(pass) || pass?.idEvent || pass?.IdEvent || (id && !isNaN(parseInt(id, 10)) ? parseInt(id, 10) : null);
@@ -135,12 +161,29 @@ const DigitalPassPage = () => {
 
   const getStatusBadge = () => {
     if (!pass) return null;
-    const rawStatus = (pass.status || (pass.checkInStatus ? 'CheckedIn' : pass.isCheckedIn ? 'CheckedIn' : pass.isCancelled ? 'Cancelled' : 'Invited')).toLowerCase();
+    const rawStatus = (
+      pass.status ||
+      (pass.checkInStatus ? 'CheckedIn' : pass.isCheckedIn ? 'CheckedIn' : pass.isCancelled ? 'Cancelled' : 'Invited')
+    ).toLowerCase();
 
     if (rawStatus.includes('check')) {
       return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-cyan-950/60 border border-cyan-800/50 text-cyan-400 shrink-0">
+          <ShieldCheck className="w-3.5 h-3.5" /> CheckedIn
+        </span>
+      );
+    }
+    if (rawStatus.includes('reconfirm') || rawStatus.includes('re-confirm')) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-950/60 border border-purple-800/50 text-purple-300 shrink-0">
+          <CalendarClock className="w-3.5 h-3.5" /> Re-Confirm
+        </span>
+      );
+    }
+    if (rawStatus === 'confirmed' || (rawStatus.includes('confirm') && !rawStatus.includes('reconfirm') && !rawStatus.includes('re-confirm'))) {
+      return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-950/60 border border-emerald-800/50 text-emerald-400 shrink-0">
-          <CheckCircle2 className="w-3.5 h-3.5" /> CheckedIn
+          <CheckCircle2 className="w-3.5 h-3.5" /> Confirmed
         </span>
       );
     }
@@ -152,8 +195,8 @@ const DigitalPassPage = () => {
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-950/60 border border-blue-800/50 text-blue-400 shrink-0">
-        <Clock3 className="w-3.5 h-3.5" /> Invited
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-950/60 border border-amber-800/50 text-amber-300 shrink-0">
+        <Clock3 className="w-3.5 h-3.5" /> Pending RSVP
       </span>
     );
   };
@@ -195,6 +238,15 @@ const DigitalPassPage = () => {
     (pass?.qrCode && !pass.qrCode.includes('00000000-0000-0000-0000-000000000000') && pass.qrCode) ||
     `EVENTHUB-${rawPassEventId}-${rawPassPersonId}-${validPassGuid}`;
 
+  const isCheckedIn = Boolean(
+    pass?.checkInStatus ||
+    pass?.isCheckedIn ||
+    pass?.checkInTime ||
+    pass?.CheckInTime ||
+    pass?.status === 'CheckedIn' ||
+    pass?.Status === 'CheckedIn'
+  );
+
   return (
     <div dir={dir} className="max-w-2xl mx-auto space-y-6 pb-12">
       {/* Top Header Actions */}
@@ -231,7 +283,7 @@ const DigitalPassPage = () => {
           <div className="h-3 bg-gradient-to-r from-[var(--cst-blue-800)] via-[var(--cst-blue-600)] to-[var(--cst-red-700)]" />
 
           {/* Pass Header */}
-          <div className="p-6 md:p-8 border-b border-[var(--border-subtle)] flex items-start justify-between gap-4">
+          <div className="p-6 md:p-8 border-b border-[var(--border-subtle)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-[var(--cst-blue-400)] text-[10px] font-bold uppercase tracking-widest mb-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-[var(--cst-blue-400)]" />
@@ -248,8 +300,52 @@ const DigitalPassPage = () => {
               )}
             </div>
 
-            {/* Distinct badge color status */}
-            {getStatusBadge()}
+            {/* Status Badge & RSVP Selector */}
+            <div className="flex flex-col sm:items-end gap-2 shrink-0">
+              {getStatusBadge()}
+              {pass && (
+                <div className="flex items-center gap-1.5 no-print">
+                  <span className="text-[11px] font-bold text-[var(--text-muted)]">RSVP:</span>
+                  {isCheckedIn ? (
+                    <span
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-cyan-950/60 border border-cyan-800/50 text-cyan-300 text-xs font-bold"
+                      title="Checked in at venue turnstile - attendance status is permanently locked"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /> Checked-In (Locked)
+                    </span>
+                  ) : (
+                    <select
+                      value={
+                        String(pass.status || '').toLowerCase().replace('-', '') === 'reconfirm'
+                          ? 'ReConfirm'
+                          : (pass.status || '').toLowerCase().includes('confirm')
+                          ? 'Confirmed'
+                          : (pass.status || '').toLowerCase().includes('cancel')
+                          ? 'Cancelled'
+                          : (pass.status || '').toLowerCase().includes('check')
+                          ? 'CheckedIn'
+                          : 'Pending'
+                      }
+                      disabled={updateStatusMutation.isPending}
+                      onChange={(e) => {
+                        const pId = pass.idParticipation || pass.idPass || pass.id || id;
+                        updateStatusMutation.mutate({
+                          participationId: pId,
+                          status: e.target.value,
+                        });
+                      }}
+                      className="bg-[var(--surface-950)] border border-[var(--border-default)] text-xs font-semibold text-[var(--text-primary)] rounded-xl px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] cursor-pointer"
+                      title="Update your RSVP status"
+                    >
+                      <option value="Confirmed">🟢 Confirm</option>
+                      <option value="ReConfirm">🟣 Re-Confirm</option>
+                      <option value="Pending">🟡 Pending</option>
+                      <option value="Cancelled">🔴 Cancel</option>
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Body Layout: Details Left + Centered QR Code Right */}

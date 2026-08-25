@@ -4,6 +4,8 @@ import {
   TrendingUp,
   Users,
   CheckCircle2,
+  XCircle,
+  AlertTriangle,
   Star,
   Send,
   Calendar,
@@ -15,6 +17,9 @@ import {
   RefreshCw,
   ShieldCheck,
   Inbox,
+  FileText,
+  FileSpreadsheet,
+  Zap,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -40,6 +45,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { checkPassDispatchStatus } from '../../utils/passUtils';
 import { AIFeedbackInsightsCard } from '../../components/analytics/AIFeedbackInsightsCard';
+import { EventPerformanceReportModal } from '../../components/analytics/EventPerformanceReportModal';
 
 // Default Color Palettes for charts
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1', '#94a3b8'];
@@ -65,8 +71,8 @@ const CustomTooltip = ({ active, payload, label }) => {
 const AnalyticsSkeleton = () => (
   <div className="space-y-6 animate-pulse">
     <div className="h-16 bg-slate-900/80 border border-slate-800 rounded-3xl" />
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-      {[...Array(4)].map((_, i) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      {[...Array(6)].map((_, i) => (
         <div key={i} className="h-32 bg-slate-900/80 border border-slate-800 rounded-3xl" />
       ))}
     </div>
@@ -93,6 +99,7 @@ const AnalyticsPage = () => {
   const [selectedEventId, setSelectedEventId] = useState('');
   const [dateRange, setDateRange] = useState('30d'); // 7d | 30d | all
   const [selectedRoleFilter, setSelectedRoleFilter] = useState(''); // '' | PersonRole enum values
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   // 1. Fetch Events List (GET /api/Event)
   const { data: rawEvents = [] } = useQuery({
@@ -229,6 +236,22 @@ const AnalyticsPage = () => {
     },
   });
 
+  // 7. Fetch AI Executive Insights for the active/selected event
+  const targetReportEventId = selectedEventId || events[0]?.idEvent || events[0]?.id || null;
+  const { data: aiInsights } = useQuery({
+    queryKey: ['aiFeedbackInsights', targetReportEventId],
+    queryFn: async () => {
+      if (!targetReportEventId) return null;
+      try {
+        const res = await axiosClient.get(ENDPOINTS.AI.FEEDBACK_INSIGHTS(targetReportEventId));
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(targetReportEventId),
+  });
+
   // Construct Lookup Maps
   const personsMap = React.useMemo(() => {
     const map = {};
@@ -283,6 +306,19 @@ const AnalyticsPage = () => {
 
   const checkInRate =
     totalRegistrations > 0 ? (confirmedCheckInsCount / totalRegistrations) * 100 : 0;
+
+  const cancelledCount = activeParticipationsFiltered.filter((p) => {
+    const status = (p.status || '').toLowerCase();
+    return p.isCancelled || status.includes('cancel') || status.includes('decline');
+  }).length;
+
+  const cancelledRate =
+    totalRegistrations > 0 ? (cancelledCount / totalRegistrations) * 100 : 0;
+
+  const missedCount = Math.max(0, totalRegistrations - confirmedCheckInsCount - cancelledCount);
+
+  const missedRate =
+    totalRegistrations > 0 ? (missedCount / totalRegistrations) * 100 : 0;
 
   const avgRating = React.useMemo(() => {
     if (backendAnalytics?.averageRating && !selectedRoleFilter) return backendAnalytics.averageRating;
@@ -359,7 +395,7 @@ const AnalyticsPage = () => {
     }).filter((item) => item.value > 0);
   }, [persons, activeParticipations, personsMap, selectedEventId]);
 
-  // ── Chart 3: Top Participating Companies (Real Companies in DB) ─────────────
+  // ── Chart 3: Top Participating Companies (Real Companies in DB - SuperAdmin Only) ─
   const topCompaniesData = React.useMemo(() => {
     if (backendAnalytics?.topCompanies && backendAnalytics.topCompanies.length > 0) {
       return backendAnalytics.topCompanies;
@@ -384,6 +420,15 @@ const AnalyticsPage = () => {
 
     return sorted;
   }, [backendAnalytics, activeParticipations, personsMap, companiesMap]);
+
+  // ── Post-Event Attendance Turnout Breakdown (Checked In vs Missed vs Cancelled) ─
+  const turnoutBreakdownData = React.useMemo(() => {
+    return [
+      { name: 'Checked In', value: confirmedCheckInsCount, rate: checkInRate, color: '#10b981' },
+      { name: 'Missed (No-Show)', value: missedCount, rate: missedRate, color: '#f59e0b' },
+      { name: 'Cancelled', value: cancelledCount, rate: cancelledRate, color: '#f43f5e' },
+    ];
+  }, [confirmedCheckInsCount, checkInRate, missedCount, missedRate, cancelledCount, cancelledRate]);
 
   // ── Chart 4: Rating Breakdown Distribution (Real Feedback DB Data) ─────────
   const ratingDistribution = React.useMemo(() => {
@@ -472,6 +517,123 @@ const AnalyticsPage = () => {
     }));
   }, [backendAnalytics, activeParticipations, selectedEventId]);
 
+  // Compute Peak Velocity Max & Peak Window
+  const { peakVelocityMax, peakVelocityHour } = React.useMemo(() => {
+    if (!checkInVelocityData || checkInVelocityData.length === 0) {
+      return { peakVelocityMax: 0, peakVelocityHour: 'N/A' };
+    }
+    let maxVal = 0;
+    let bestTime = 'N/A';
+    checkInVelocityData.forEach((item) => {
+      if (item.velocity > maxVal) {
+        maxVal = item.velocity;
+        bestTime = item.time;
+      }
+    });
+    return { peakVelocityMax: maxVal, peakVelocityHour: bestTime };
+  }, [checkInVelocityData]);
+
+  // Selected event object for export
+  const selectedEventObj = React.useMemo(() => {
+    return events.find((e) => String(e.idEvent || e.id) === String(selectedEventId)) || null;
+  }, [events, selectedEventId]);
+
+  // ── CSV Export Engine ───────────────────────────────────────────────────────
+  const handleExportCSV = () => {
+    const eventTitle = selectedEventObj?.title || 'All Events Aggregated Portfolio';
+    const eventId = selectedEventObj?.idEvent || selectedEventObj?.id || 'all';
+
+    const lines = [];
+    lines.push(['EVENT PERFORMANCE & POST-EVENT ANALYTICS AUDIT']);
+    lines.push(['Report Date', new Date().toISOString()]);
+    lines.push(['Event Session', `"${eventTitle}"`]);
+    lines.push(['Event ID', eventId]);
+    lines.push(['Auditor Role', isSuperAdmin ? 'SuperAdmin Full Scope' : 'Event Organiser Post-Event Scope']);
+    lines.push([]);
+
+    // 1. Executive Performance Metrics
+    lines.push(['EXECUTIVE PERFORMANCE KPIS']);
+    lines.push(['Metric Name', 'Count / Value', 'Percentage Rate / Description']);
+    lines.push(['Total Registrations', totalRegistrations, '100.0%']);
+    lines.push(['Confirmed Checked-In', confirmedCheckInsCount, `${checkInRate.toFixed(1)}%`]);
+    lines.push(['Missed / No-Shows', missedCount, `${missedRate.toFixed(1)}%`]);
+    lines.push(['Cancelled Registrations', cancelledCount, `${cancelledRate.toFixed(1)}%`]);
+    lines.push(['Average Guest Rating', avgRating > 0 ? avgRating.toFixed(1) : 'N/A', `${activeFeedbacks.length} Reviews Submitted`]);
+    lines.push(['Positive Sentiment Rate', `${positiveSentimentPercentage}%`, 'Ratings >= 4 Stars']);
+    lines.push(['Peak Check-In Velocity', `${peakVelocityMax} scans/hour`, `@ ${peakVelocityHour}`]);
+    lines.push(['Pass Delivery Rate', `${passesDispatchedCount} sent`, `${passDeliveryRate.toFixed(1)}%`]);
+    lines.push([]);
+
+    // 2. Attendance Turnout Breakdown
+    lines.push(['ATTENDANCE TURNOUT BREAKDOWN']);
+    lines.push(['Status Category', 'Attendee Count', 'Conversion Rate (%)']);
+    lines.push(['Confirmed Checked-In', confirmedCheckInsCount, `${checkInRate.toFixed(1)}%`]);
+    lines.push(['Missed / No-Shows', missedCount, `${missedRate.toFixed(1)}%`]);
+    lines.push(['Cancelled Registrations', cancelledCount, `${cancelledRate.toFixed(1)}%`]);
+    lines.push([]);
+
+    // 3. Hourly Check-In Velocity Timeline
+    lines.push(['HOURLY CHECK-IN SCAN VELOCITY']);
+    lines.push(['Time Slot', 'Scans Count']);
+    checkInVelocityData.forEach((v) => {
+      lines.push([`"${v.time}"`, v.velocity]);
+    });
+    lines.push([]);
+
+    // 4. Guest Rating Distribution
+    lines.push(['GUEST RATING DISTRIBUTION']);
+    lines.push(['Star Rating', 'Review Count', 'Percentage (%)']);
+    ratingDistribution.forEach((r) => {
+      lines.push([`"${r.stars}"`, r.count, `${r.percentage}%`]);
+    });
+    lines.push([]);
+
+    // 5. Top Companies (Only if SuperAdmin)
+    if (isSuperAdmin && topCompaniesData.length > 0) {
+      lines.push(['TOP PARTICIPATING PARTNER COMPANIES']);
+      lines.push(['Rank', 'Company Name', 'Attendee Headcount']);
+      topCompaniesData.forEach((c, idx) => {
+        lines.push([idx + 1, `"${c.company}"`, c.count]);
+      });
+      lines.push([]);
+    }
+
+    // 6. Attendee Roster Detail Ledger
+    lines.push(['ATTENDEE PARTICIPATION DETAILS']);
+    lines.push(['Participation ID', 'Person ID', 'Full Name', 'Email', 'Role', 'Company', 'Attendance Status', 'Check-In Timestamp']);
+    activeParticipationsFiltered.forEach((p) => {
+      const pId = p.idPerson || p.person?.idPerson;
+      const person = p.person || (pId ? personsMap[pId] : null) || {};
+      const isCheckedIn = (p.status || '').toLowerCase().includes('check') || p.checkInStatus || p.isCheckedIn || Boolean(p.checkInTime);
+      const isCancelled = p.isCancelled || (p.status || '').toLowerCase().includes('cancel') || (p.status || '').toLowerCase().includes('decline');
+      const status = isCheckedIn ? 'CheckedIn' : isCancelled ? 'Cancelled' : 'Missed_NoShow';
+      const personName = `${person.firstName || ''} ${person.lastName || ''}`.trim() || person.email?.split('@')[0] || 'Attendee';
+      const companyName = person.company?.name || person.companyName || companiesMap[person.idCompany]?.name || 'N/A';
+      
+      lines.push([
+        p.idParticipation || p.idPass || p.id || 'N/A',
+        pId || 'N/A',
+        `"${personName}"`,
+        `"${person.email || ''}"`,
+        `"${person.role || p.role || 'Attendee'}"`,
+        `"${companyName}"`,
+        status,
+        `"${p.checkInTime || p.updatedAt || 'N/A'}"`,
+      ]);
+    });
+
+    const csvContent = lines.map((row) => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `event_${eventId}_performance_analytics_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   if (participationsLoading) {
     return (
       <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -493,12 +655,14 @@ const AnalyticsPage = () => {
             {t('analytics.title', 'Executive Analytics Dashboard')}
           </h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">
-            {t('analytics.subtitle', 'Real-time platform KPIs, door velocity metrics, and participant role distribution.')}
+            {isSuperAdmin
+              ? t('analytics.subtitle', 'Real-time platform KPIs, door velocity metrics, and participant role distribution.')
+              : 'Post-event turnout performance, attendance status rates, guest ratings, and peak check-in velocity.'}
           </p>
         </div>
 
-        {/* Toolbar Controls */}
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Toolbar Controls & Export Actions */}
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Event Selector Dropdown */}
           <div className="flex items-center gap-2 bg-[var(--surface-800)] border border-[var(--border-default)] rounded-2xl px-3 py-1.5 text-xs">
             <Filter className="w-4 h-4 text-[var(--cst-blue-400)] shrink-0" />
@@ -554,94 +718,178 @@ const AnalyticsPage = () => {
             </select>
           </div>
 
+          {/* Export PDF Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsReportModalOpen(true)}
+            className="text-xs border-blue-500/40 bg-blue-950/30 hover:bg-blue-900/40 text-blue-300 flex items-center gap-1.5 cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5 text-blue-400" />
+            <span>{t('analytics.exportPdf', 'Export PDF Report')}</span>
+          </Button>
+
+          {/* Export CSV Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCSV}
+            className="text-xs border-emerald-500/40 bg-emerald-950/30 hover:bg-emerald-900/40 text-emerald-300 flex items-center gap-1.5 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{t('analytics.exportCsv', 'Export CSV Data')}</span>
+          </Button>
+
           <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs">
-            <RefreshCw className="w-3.5 h-3.5 mr-1 text-[var(--cst-blue-400)]" /> Refresh
+            <RefreshCw className="w-3.5 h-3.5 text-[var(--cst-blue-400)]" />
           </Button>
         </div>
       </div>
 
-      {/* ── KPI Scorecards Grid (4 Top Cards with Icons) ────────────────────── */}
-      <div className="cst-stagger-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      {/* ── KPI Scorecards Grid (Role-Tailored) ──────────────────────────────── */}
+      <div className="cst-stagger-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {/* Card 1: Total Registrations */}
-        <Card className="p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-[var(--cst-blue-600)]/40 transition-all">
+        <Card className="p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-blue-500/40 transition-all flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
-              Total Registrations
+              Registrations
             </span>
-            <div className="p-2.5 bg-blue-950/60 border border-blue-800/50 rounded-2xl text-blue-400">
-              <Users className="w-5 h-5" />
+            <div className="p-2 bg-blue-950/60 border border-blue-800/50 rounded-xl text-blue-400">
+              <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-3xl font-black text-[var(--text-primary)] tracking-tight">
+          <div className="mt-2">
+            <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
               {totalRegistrations.toLocaleString()}
             </div>
-            <p className="text-[11px] text-emerald-400 font-semibold mt-1 flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5" /> Database records loaded
+            <p className="text-[10px] text-emerald-400 font-semibold mt-0.5 flex items-center gap-1">
+              <TrendingUp className="w-3 h-3" /> Total passes claimed
             </p>
           </div>
         </Card>
 
-        {/* Card 2: Check-in Conversion Rate */}
-        <Card className="p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-emerald-600/40 transition-all">
+        {/* Card 2: Check-In Rate */}
+        <Card className="p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-emerald-600/40 transition-all flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
-              Check-In Conversion
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+              {t('analytics.checkedInRate', 'Check-In Rate')}
             </span>
-            <div className="p-2.5 bg-emerald-950/60 border border-emerald-800/50 rounded-2xl text-emerald-400">
-              <CheckCircle2 className="w-5 h-5" />
+            <div className="p-2 bg-emerald-950/60 border border-emerald-800/50 rounded-xl text-emerald-400">
+              <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-3xl font-black text-emerald-300 tracking-tight">
-              {typeof checkInRate === 'number' ? `${checkInRate.toFixed(1)}%` : checkInRate}
+          <div className="mt-2">
+            <div className="text-2xl font-black text-emerald-300 tracking-tight">
+              {checkInRate.toFixed(1)}%
             </div>
-            <p className="text-[11px] text-slate-400 font-medium mt-1">
-              {confirmedCheckInsCount} confirmed door entries
+            <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+              {confirmedCheckInsCount} checked in
             </p>
           </div>
         </Card>
 
-        {/* Card 3: Average Event Rating */}
-        <Card className="p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-amber-600/40 transition-all">
+        {/* Card 3: Missed (No-Show) Rate */}
+        <Card className="p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-amber-600/40 transition-all flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
-              Average Guest Rating
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+              {t('analytics.missedRate', 'Missed Rate')}
             </span>
-            <div className="p-2.5 bg-amber-950/60 border border-amber-800/50 rounded-2xl text-amber-400">
-              <Star className="w-5 h-5 fill-amber-400" />
+            <div className="p-2 bg-amber-950/60 border border-amber-800/50 rounded-xl text-amber-400">
+              <AlertTriangle className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-3xl font-black text-amber-300 tracking-tight flex items-baseline gap-1">
+          <div className="mt-2">
+            <div className="text-2xl font-black text-amber-300 tracking-tight">
+              {missedRate.toFixed(1)}%
+            </div>
+            <p className="text-[10px] text-amber-400/90 font-medium mt-0.5">
+              {missedCount} no-shows
+            </p>
+          </div>
+        </Card>
+
+        {/* Card 4: Cancelled Rate */}
+        <Card className="p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-rose-600/40 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400">
+              {t('analytics.cancelledRate', 'Cancelled Rate')}
+            </span>
+            <div className="p-2 bg-rose-950/60 border border-rose-800/50 rounded-xl text-rose-400">
+              <XCircle className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-black text-rose-300 tracking-tight">
+              {cancelledRate.toFixed(1)}%
+            </div>
+            <p className="text-[10px] text-rose-400/90 font-medium mt-0.5">
+              {cancelledCount} cancelled passes
+            </p>
+          </div>
+        </Card>
+
+        {/* Card 5: Average Guest Rating */}
+        <Card className="p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-amber-600/40 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+              Guest Rating
+            </span>
+            <div className="p-2 bg-amber-950/60 border border-amber-800/50 rounded-xl text-amber-400">
+              <Star className="w-4 h-4 fill-amber-400" />
+            </div>
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-black text-amber-300 tracking-tight flex items-baseline gap-1">
               {avgRating > 0 ? avgRating.toFixed(1) : 'N/A'}{' '}
-              <span className="text-sm font-normal text-slate-400">/ 5.0</span>
+              <span className="text-xs font-normal text-slate-500">/ 5.0</span>
             </div>
-            <p className="text-[11px] text-amber-400/90 font-semibold mt-1">
-              {activeFeedbacks.length > 0 ? `${activeFeedbacks.length} Guest Reviews` : 'No reviews submitted yet'}
+            <p className="text-[10px] text-amber-400/90 font-medium mt-0.5">
+              {activeFeedbacks.length > 0 ? `${activeFeedbacks.length} Guest Reviews` : 'No reviews submitted'}
             </p>
           </div>
         </Card>
 
-        {/* Card 4: Pass Delivery Rate */}
-        <Card className="p-5 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-purple-600/40 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
-              Pass Delivery Rate
-            </span>
-            <div className="p-2.5 bg-purple-950/60 border border-purple-800/50 rounded-2xl text-purple-400">
-              <Send className="w-5 h-5" />
+        {/* Card 6: Peak Check-In Arrival Velocity (or Pass Delivery for SuperAdmin) */}
+        {!isSuperAdmin ? (
+          <Card className="p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-indigo-600/40 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+                Peak Velocity
+              </span>
+              <div className="p-2 bg-indigo-950/60 border border-indigo-800/50 rounded-xl text-indigo-400">
+                <Zap className="w-4 h-4" />
+              </div>
             </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-3xl font-black text-purple-300 tracking-tight">
-              {typeof passDeliveryRate === 'number' ? `${passDeliveryRate.toFixed(1)}%` : passDeliveryRate}
+            <div className="mt-2">
+              <div className="text-2xl font-black text-indigo-300 tracking-tight">
+                {peakVelocityMax}{' '}
+                <span className="text-xs font-normal text-slate-500">scans/hr</span>
+              </div>
+              <p className="text-[10px] text-indigo-300/90 font-medium mt-0.5 truncate">
+                @ {peakVelocityHour}
+              </p>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium mt-1">
-              {passesDispatchedCount} Email &amp; WA passes sent
-            </p>
-          </div>
-        </Card>
+          </Card>
+        ) : (
+          <Card className="p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-xl hover:border-purple-600/40 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400">
+                Pass Delivery
+              </span>
+              <div className="p-2 bg-purple-950/60 border border-purple-800/50 rounded-xl text-purple-400">
+                <Send className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2">
+              <div className="text-2xl font-black text-purple-300 tracking-tight">
+                {passDeliveryRate.toFixed(1)}%
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                {passesDispatchedCount} passes dispatched
+              </p>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* ── AI Executive Feedback & Sentiment Insights ────────────────────── */}
@@ -658,7 +906,104 @@ const AnalyticsPage = () => {
 
       {/* ── Charts & Visualizations Grid ───────────────────────────────────── */}
       <div className="cst-stagger-3 grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* 1. Grouped Bar Chart: Registration vs Check-In Comparison */}
+        
+        {/* 1. Post-Event Attendance Turnout Breakdown Card (Checked-In vs Missed vs Cancelled) */}
+        <Card className="bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6 flex flex-col justify-between">
+          <div>
+            <CardHeader className="p-0 mb-4">
+              <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
+                <Users className="w-5 h-5 text-emerald-400" />
+                <span>{t('analytics.turnoutBreakdown', 'Attendance & Turnout Breakdown')}</span>
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Turnout conversion rate: Checked-in vs Missed (No-shows) vs Cancelled passes
+              </CardDescription>
+            </CardHeader>
+
+            {totalRegistrations === 0 ? (
+              <EmptyChartState title="No Attendance Records" message="Register attendees to visualize turnout conversion rates." />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                {/* Donut Chart */}
+                <div className="h-52 flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={turnoutBreakdownData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {turnoutBreakdownData.map((entry, index) => (
+                          <Cell key={`turnout-cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Turnout Stats Progress List */}
+                <div className="space-y-3">
+                  {/* Checked In */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Checked In
+                      </span>
+                      <span className="font-mono text-slate-200 font-bold">
+                        {confirmedCheckInsCount} ({checkInRate.toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                      <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${checkInRate}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Missed */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-amber-400 font-bold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" /> Missed (No-Show)
+                      </span>
+                      <span className="font-mono text-slate-200 font-bold">
+                        {missedCount} ({missedRate.toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                      <div className="bg-amber-500 h-full rounded-full" style={{ width: `${missedRate}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Cancelled */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-rose-400 font-bold flex items-center gap-1.5">
+                        <XCircle className="w-3.5 h-3.5" /> Cancelled
+                      </span>
+                      <span className="font-mono text-slate-200 font-bold">
+                        {cancelledCount} ({cancelledRate.toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                      <div className="bg-rose-500 h-full rounded-full" style={{ width: `${cancelledRate}%` }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-3 mt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+            <span>Total Claimed: <strong className="text-slate-100">{totalRegistrations}</strong></span>
+            <span className="text-emerald-400 font-semibold">{checkInRate.toFixed(1)}% Turnout</span>
+          </div>
+        </Card>
+
+        {/* 2. Grouped Bar Chart: Registration vs Check-In Comparison */}
         <Card className="bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6">
           <CardHeader className="p-0 mb-6">
             <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
@@ -688,78 +1033,82 @@ const AnalyticsPage = () => {
           </CardContent>
         </Card>
 
-        {/* 2. Donut Chart: System Role Diversity (Attendee, EventOrganiser, SuperAdmin) */}
-        <Card className="bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6">
-          <CardHeader className="p-0 mb-6">
-            <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
-              <PieIcon className="w-5 h-5 text-emerald-400" />
-              <span>Participant System Role Diversity</span>
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Breakdown across all 8 user role categories (Attendee, VIP, Spokesperson, Speaker, Sponsor, Staff, Organiser, SuperAdmin)
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0 h-72 flex items-center justify-center">
-            {participantDiversityData.length === 0 ? (
-              <EmptyChartState title="No Person Records" message="Register persons to see system role distribution." />
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={participantDiversityData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={65}
-                    outerRadius={95}
-                    paddingAngle={4}
-                    dataKey="value"
+        {/* 3. Donut Chart: System Role Diversity (Only for SuperAdmin) */}
+        {isSuperAdmin && (
+          <Card className="bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6">
+            <CardHeader className="p-0 mb-6">
+              <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
+                <PieIcon className="w-5 h-5 text-emerald-400" />
+                <span>Participant System Role Diversity</span>
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Breakdown across all 8 user role categories (Attendee, VIP, Spokesperson, Speaker, Sponsor, Staff, Organiser, SuperAdmin)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0 h-72 flex items-center justify-center">
+              {participantDiversityData.length === 0 ? (
+                <EmptyChartState title="No Person Records" message="Register persons to see system role distribution." />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={participantDiversityData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={65}
+                      outerRadius={95}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {participantDiversityData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* 4. Horizontal Bar Chart: Top Participating Companies (Only for SuperAdmin) */}
+        {isSuperAdmin && (
+          <Card className="bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6">
+            <CardHeader className="p-0 mb-6">
+              <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
+                <Building2 className="w-5 h-5 text-purple-400" />
+                <span>Top Participating Companies</span>
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Organizations represented by highest attendee headcount
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0 h-80">
+              {topCompaniesData.length === 0 ? (
+                <EmptyChartState title="No Company Data" message="Assign company affiliations to attendees to view top organizations." />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    layout="vertical"
+                    data={topCompaniesData}
+                    margin={{ top: 5, right: 20, left: 40, bottom: 5 }}
                   >
-                    {participantDiversityData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} />
+                    <YAxis dataKey="company" type="category" stroke="#64748b" tick={{ fontSize: 11 }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="count" name="Attendees" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        {/* 3. Horizontal Bar Chart: Top Participating Companies */}
-        <Card className="bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6">
-          <CardHeader className="p-0 mb-6">
-            <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
-              <Building2 className="w-5 h-5 text-purple-400" />
-              <span>Top Participating Companies</span>
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Organizations represented by highest attendee headcount
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0 h-80">
-            {topCompaniesData.length === 0 ? (
-              <EmptyChartState title="No Company Data" message="Assign company affiliations to attendees to view top organizations." />
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  layout="vertical"
-                  data={topCompaniesData}
-                  margin={{ top: 5, right: 20, left: 40, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="company" type="category" stroke="#64748b" tick={{ fontSize: 11 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="count" name="Attendees" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 4. Rating Breakdown Progress Bars */}
-        <Card className="bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6 flex flex-col justify-between">
+        {/* 5. Rating Breakdown Progress Bars */}
+        <Card className={`${isSuperAdmin ? '' : 'lg:col-span-2'} bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6 flex flex-col justify-between`}>
           <div>
             <CardHeader className="p-0 mb-6">
               <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
@@ -806,16 +1155,24 @@ const AnalyticsPage = () => {
           </div>
         </Card>
 
-        {/* 5. Area Chart: Peak Check-In Arrival Velocity (Full Span) */}
+        {/* 6. Area Chart: Peak Check-In Arrival Velocity (Full Span) */}
         <Card className="lg:col-span-2 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-2xl p-6">
-          <CardHeader className="p-0 mb-6">
-            <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
-              <Activity className="w-5 h-5 text-indigo-400" />
-              <span>Peak Check-In Arrival Velocity</span>
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Hourly distribution of turnstile QR scans to optimize door staffing and security capacity
-            </CardDescription>
+          <CardHeader className="p-0 mb-6 flex flex-row items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-slate-100 flex items-center gap-2 text-base">
+                <Activity className="w-5 h-5 text-indigo-400" />
+                <span>Peak Check-In Arrival Velocity</span>
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Hourly distribution of turnstile QR scans to optimize door staffing and security capacity
+              </CardDescription>
+            </div>
+            {peakVelocityMax > 0 && (
+              <div className="px-3 py-1 bg-indigo-950/80 border border-indigo-800/60 rounded-xl text-xs text-indigo-300 font-mono flex items-center gap-1.5 shrink-0">
+                <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Peak: <strong>{peakVelocityMax} scans/hr</strong> @ {peakVelocityHour}</span>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="p-0 h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -845,6 +1202,35 @@ const AnalyticsPage = () => {
         </Card>
 
       </div>
+
+      {/* ── Executive Performance Report Modal (PDF Export) ─────────────────── */}
+      <EventPerformanceReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        event={selectedEventObj}
+        isSuperAdmin={isSuperAdmin}
+        user={user}
+        stats={{
+          totalRegistrations,
+          confirmedCheckInsCount,
+          checkInRate,
+          missedCount,
+          missedRate,
+          cancelledCount,
+          cancelledRate,
+          avgRating,
+          feedbacksCount: activeFeedbacks.length,
+          positiveSentimentPercentage,
+          ratingDistribution,
+          peakVelocityData: checkInVelocityData,
+          peakVelocityMax,
+          peakVelocityHour,
+          passDeliveryRate,
+          passesDispatchedCount,
+          topCompaniesData,
+          aiInsights,
+        }}
+      />
     </div>
   );
 };

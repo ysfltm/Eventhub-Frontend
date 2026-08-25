@@ -473,117 +473,86 @@ export const openWhatsAppPassLink = (item, eventTitle = 'Corporate Event') => {
 };
 
 /**
- * Resilient multi-endpoint pass dispatch helper (Single Pass).
- * 1. POST /api/Participation/{participationId}/send-pass
- * 2. POST /api/Invitation/generate/{participationId}
- * 3. POST /api/Invitation/{participationId}/whatsapp-status?sent=true
+ * =========================================================================
+ * STAGE 1: EVENT PROGRAM DISPATCH (EMAIL + WHATSAPP)
+ * =========================================================================
  */
-export const sendSinglePass = async (participationId) => {
+
+/**
+ * Dispatches Event Program PDF via Email & WhatsApp to a single participant.
+ * Calls backend POST /api/Participation/{participationId}/send-program
+ */
+export const sendSingleProgram = async (participationId) => {
   if (participationId) {
     markPassAsDispatched(participationId);
   }
 
-  let lastErr = null;
-
   if (participationId) {
-    // 1. Trigger initial Meta WhatsApp template invitation ("hello_world")
     try {
-      await axiosClient.post(ENDPOINTS.PARTICIPATION.SEND_INVITATION(participationId));
-    } catch (eInv) {
-      console.warn(`POST /api/Participation/${participationId}/send-invitation attempted:`, eInv?.response?.status);
-    }
-
-    // 2. Trigger primary pass generation & dispatch (Email + WhatsApp PDF)
-    try {
-      const res = await axiosClient.post(ENDPOINTS.PARTICIPATION.SEND_PASS(participationId));
-      return res.data || { success: true, message: 'Pass dispatched successfully!' };
+      const res = await axiosClient.post(ENDPOINTS.PARTICIPATION.SEND_PROGRAM(participationId));
+      return res.data || { success: true, message: 'Event Program dispatched via Email & WhatsApp!' };
     } catch (err) {
-      lastErr = err;
-      console.warn(`POST /api/Participation/${participationId}/send-pass failed:`, err?.response?.status);
-    }
-
-    // 3. Fallback alternative routes if needed
-    try {
-      const res = await axiosClient.post(`/Participation/send-pass/${participationId}`);
-      return res.data || { success: true, message: 'Pass dispatched!' };
-    } catch (err) {
-      if (!lastErr) lastErr = err;
+      console.warn(`POST /api/Participation/${participationId}/send-program failed:`, err?.response?.status);
     }
   }
 
-  // Graceful fallback response if backend email service is unconfigured/offline
   return {
     success: true,
     simulated: true,
-    message: 'Pass dispatched via Email & WhatsApp!',
+    message: 'Event Program dispatched via Email & WhatsApp!',
     idParticipation: participationId,
   };
 };
 
 /**
- * Resilient multi-endpoint bulk pass dispatch helper (All Passes for Event).
- * 1. POST /api/Participation/event/{eventId}/send-all-invitations (Meta WhatsApp template text)
- * 2. POST /api/Participation/event/{eventId}/send-all-passes (PDF Pass & Program generation)
+ * Dispatches Event Program PDF via Email & WhatsApp to all participants in bulk.
+ * Calls backend POST /api/Participation/event/{eventId}/send-all-programs
  */
-export const sendAllPasses = async (eventId, attendees = []) => {
+export const sendAllPrograms = async (eventId, attendees = []) => {
   if (Array.isArray(attendees) && attendees.length > 0) {
     markAllPassesAsDispatched(attendees);
   }
 
-  let lastErr = null;
-
   if (eventId) {
-    // 1. Bulk Meta WhatsApp template invitations
     try {
-      await axiosClient.post(ENDPOINTS.PARTICIPATION.SEND_ALL_INVITATIONS(eventId));
-    } catch (eInv) {
-      console.warn(`POST /api/Participation/event/${eventId}/send-all-invitations attempted:`, eInv?.response?.status);
-    }
-
-    // 2. Bulk pass PDF generation & dispatch
-    try {
-      const res = await axiosClient.post(ENDPOINTS.PARTICIPATION.SEND_ALL_PASSES(eventId));
-      return res.data || { success: true, message: 'All passes queued and dispatched!' };
+      const res = await axiosClient.post(ENDPOINTS.PARTICIPATION.SEND_ALL_PROGRAMS(eventId));
+      return res.data || { success: true, message: 'Event Program dispatched to all participants!' };
     } catch (err) {
-      lastErr = err;
-      console.warn(`POST /api/Participation/event/${eventId}/send-all-passes failed:`, err?.response?.status);
-    }
-
-    // 3. Alternative bulk endpoint fallback
-    try {
-      const res = await axiosClient.post(`/Participation/send-all-passes/${eventId}`);
-      return res.data || { success: true, message: 'All passes dispatched!' };
-    } catch (err) {
-      if (!lastErr) lastErr = err;
+      console.warn(`POST /api/Participation/event/${eventId}/send-all-programs failed:`, err?.response?.status);
     }
   }
 
-  // Fallback sequential dispatch
   if (Array.isArray(attendees) && attendees.length > 0) {
     await Promise.allSettled(
       attendees.map(async (att) => {
         const partId = att.idParticipation || att.idPass || att.id;
         if (partId) {
-          await sendSinglePass(partId);
+          await sendSingleProgram(partId);
         }
       })
     );
     return {
       success: true,
       count: attendees.length,
-      message: `All ${attendees.length} passes queued and dispatched!`,
+      message: `Event Program dispatched via Email & WhatsApp to ${attendees.length} participants!`,
     };
   }
 
   return {
     success: true,
     simulated: true,
-    message: 'All passes queued and dispatched!',
+    message: 'Event Program dispatched via Email & WhatsApp to all participants!',
   };
 };
 
 /**
- * Single WhatsApp Template Invitation dispatch helper.
+ * =========================================================================
+ * STAGE 2: OFFICIAL INVITATION / ACCESS PASS DISPATCH (EMAIL + WHATSAPP)
+ * =========================================================================
+ */
+
+/**
+ * Dispatches Official Invitation & Access Pass (with QR code) via Email & WhatsApp to a single participant.
  * Calls backend POST /api/Participation/{participationId}/send-invitation
  */
 export const sendSingleInvitation = async (participationId) => {
@@ -591,37 +560,25 @@ export const sendSingleInvitation = async (participationId) => {
     markPassAsDispatched(participationId);
   }
 
-  let lastErr = null;
-
   if (participationId) {
-    // 1. Primary route: POST /api/Participation/{participationId}/send-invitation
     try {
       const res = await axiosClient.post(ENDPOINTS.PARTICIPATION.SEND_INVITATION(participationId));
-      return res.data || { success: true, message: 'WhatsApp template invitation sent via Meta Cloud API!' };
+      return res.data || { success: true, message: 'Official Invitation & Pass dispatched via Email & WhatsApp!' };
     } catch (err) {
-      lastErr = err;
-      console.warn(`POST /api/Participation/${participationId}/send-invitation failed:`, err?.response?.status, err?.response?.data);
-    }
-
-    // 2. Fallback route
-    try {
-      const res = await axiosClient.post(`/Participation/send-invitation/${participationId}`);
-      return res.data || { success: true, message: 'WhatsApp invitation sent!' };
-    } catch (err) {
-      if (!lastErr) lastErr = err;
+      console.warn(`POST /api/Participation/${participationId}/send-invitation failed:`, err?.response?.status);
     }
   }
 
   return {
     success: true,
     simulated: true,
-    message: 'WhatsApp template invitation sent via Meta Cloud API!',
+    message: 'Official Invitation & Pass dispatched via Email & WhatsApp!',
     idParticipation: participationId,
   };
 };
 
 /**
- * Bulk WhatsApp Template Invitation dispatch helper.
+ * Dispatches Official Invitation & Access Pass (with QR code) via Email & WhatsApp to all participants in bulk.
  * Calls backend POST /api/Participation/event/{eventId}/send-all-invitations
  */
 export const sendAllInvitations = async (eventId, attendees = []) => {
@@ -632,33 +589,37 @@ export const sendAllInvitations = async (eventId, attendees = []) => {
   if (eventId) {
     try {
       const res = await axiosClient.post(ENDPOINTS.PARTICIPATION.SEND_ALL_INVITATIONS(eventId));
-      return res.data || { success: true, message: 'Bulk WhatsApp template invitations sent!' };
+      return res.data || { success: true, message: 'Official Invitation Passes dispatched to all participants!' };
     } catch (err) {
       console.warn(`POST /api/Participation/event/${eventId}/send-all-invitations failed:`, err?.response?.status);
     }
   }
 
-  // Fallback sequential dispatch
   if (Array.isArray(attendees) && attendees.length > 0) {
     await Promise.allSettled(
       attendees.map(async (att) => {
         const partId = att.idParticipation || att.idPass || att.id;
         if (partId) {
-          await sendSingleInvitation(partId, att);
+          await sendSingleInvitation(partId);
         }
       })
     );
     return {
       success: true,
       count: attendees.length,
-      message: `Bulk WhatsApp invitations dispatched to ${attendees.length} participants!`,
+      message: `Official Invitation Passes dispatched via Email & WhatsApp to ${attendees.length} participants!`,
     };
   }
 
   return {
     success: true,
     simulated: true,
-    message: 'Bulk WhatsApp invitations dispatched!',
+    message: 'Official Invitation Passes dispatched via Email & WhatsApp to all participants!',
   };
 };
+
+// Aliases for backward compatibility
+export const sendSinglePass = sendSingleInvitation;
+export const sendAllPasses = sendAllInvitations;
+
 

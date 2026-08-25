@@ -269,12 +269,21 @@ const Dashboard = () => {
           <div className="flex flex-wrap items-center gap-3">
             {isOrganiser ? (
               <>
-                <Link to="/events/new">
-                  <button className="cst-btn-motion bg-gradient-to-r from-[var(--cst-blue-700)] to-[var(--cst-blue-600)] hover:from-[var(--cst-blue-600)] hover:to-[var(--cst-blue-500)] text-white px-5 py-3 rounded-2xl text-xs font-bold shadow-lg shadow-[rgba(29,86,182,0.3)] flex items-center gap-2 cursor-pointer">
-                    <PlusCircle className="w-4 h-4 text-white" />
-                    <span>{t('dashboard.publishNewEvent', 'Publish New Event')}</span>
-                  </button>
-                </Link>
+                {isSuperAdmin ? (
+                  <Link to="/events/new">
+                    <button className="cst-btn-motion bg-gradient-to-r from-[var(--cst-blue-700)] to-[var(--cst-blue-600)] hover:from-[var(--cst-blue-600)] hover:to-[var(--cst-blue-500)] text-white px-5 py-3 rounded-2xl text-xs font-bold shadow-lg shadow-[rgba(29,86,182,0.3)] flex items-center gap-2 cursor-pointer">
+                      <PlusCircle className="w-4 h-4 text-white" />
+                      <span>{t('dashboard.publishNewEvent', 'Publish New Event')}</span>
+                    </button>
+                  </Link>
+                ) : (
+                  <Link to="/events">
+                    <button className="cst-btn-motion bg-gradient-to-r from-[var(--cst-blue-700)] to-[var(--cst-blue-600)] hover:from-[var(--cst-blue-600)] hover:to-[var(--cst-blue-500)] text-white px-5 py-3 rounded-2xl text-xs font-bold shadow-lg shadow-[rgba(29,86,182,0.3)] flex items-center gap-2 cursor-pointer">
+                      <Calendar className="w-4 h-4 text-white" />
+                      <span>{t('dashboard.browseEvents', 'Manage Sessions')}</span>
+                    </button>
+                  </Link>
+                )}
                 <Link to="/admin/users">
                   <button className="cst-btn-motion bg-gradient-to-r from-[var(--cst-red-700)] to-[var(--cst-red-600)] hover:from-[var(--cst-red-600)] hover:to-[var(--cst-red-500)] text-white px-5 py-3 rounded-2xl text-xs font-bold shadow-lg shadow-[rgba(181,31,36,0.3)] flex items-center gap-2 cursor-pointer">
                     <Users className="w-4 h-4 text-white" />
@@ -380,22 +389,41 @@ const Dashboard = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Link to="/events/new" className="group">
-              <div className="p-5 bg-[var(--surface-900)] border border-[var(--border-default)] hover:border-[var(--cst-blue-500)] rounded-3xl shadow-xl cst-card-hover flex items-center justify-between">
-                <div className="flex items-center gap-3.5">
-                  <div className="p-3 bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/40 rounded-2xl text-[var(--cst-blue-400)]">
-                    <PlusCircle className="w-5 h-5 text-[var(--cst-blue-400)]" />
+            {isSuperAdmin ? (
+              <Link to="/events/new" className="group">
+                <div className="p-5 bg-[var(--surface-900)] border border-[var(--border-default)] hover:border-[var(--cst-blue-500)] rounded-3xl shadow-xl cst-card-hover flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="p-3 bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/40 rounded-2xl text-[var(--cst-blue-400)]">
+                      <PlusCircle className="w-5 h-5 text-[var(--cst-blue-400)]" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[var(--cst-blue-400)] transition-colors">
+                        {t('dashboard.publishEvent', 'Publish Event')}
+                      </h3>
+                      <p className="text-[11px] text-[var(--text-secondary)]">{t('dashboard.createAgenda', 'Create agenda & details')}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[var(--cst-blue-400)] transition-colors">
-                      {t('dashboard.publishEvent', 'Publish Event')}
-                    </h3>
-                    <p className="text-[11px] text-[var(--text-secondary)]">{t('dashboard.createAgenda', 'Create agenda & details')}</p>
-                  </div>
+                  <ChevronRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--cst-blue-400)] group-hover:translate-x-1 transition-all" />
                 </div>
-                <ChevronRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--cst-blue-400)] group-hover:translate-x-1 transition-all" />
-              </div>
-            </Link>
+              </Link>
+            ) : (
+              <Link to="/events" className="group">
+                <div className="p-5 bg-[var(--surface-900)] border border-[var(--border-default)] hover:border-[var(--cst-blue-500)] rounded-3xl shadow-xl cst-card-hover flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="p-3 bg-[var(--cst-blue-800)]/20 border border-[var(--cst-blue-600)]/40 rounded-2xl text-[var(--cst-blue-400)]">
+                      <Calendar className="w-5 h-5 text-[var(--cst-blue-400)]" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[var(--cst-blue-400)] transition-colors">
+                        {t('dashboard.manageSessions', 'Manage Sessions')}
+                      </h3>
+                      <p className="text-[11px] text-[var(--text-secondary)]">{t('dashboard.viewEditAgenda', 'View & edit company sessions')}</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--cst-blue-400)] group-hover:translate-x-1 transition-all" />
+                </div>
+              </Link>
+            )}
 
             <Link to="/admin/users" className="group">
               <div className="p-5 bg-[var(--surface-900)] border border-[var(--border-default)] hover:border-[var(--cst-red-500)] rounded-3xl shadow-xl cst-card-hover flex items-center justify-between">

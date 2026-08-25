@@ -59,9 +59,13 @@ const AppRoutes = () => {
             <Route path="/tickets/:id" element={<DigitalPassPage />} />
             <Route path="/profile" element={<ProfilePage />} />
 
-            {/* Organiser & SuperAdmin exclusive management routes */}
-            <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.EVENT_ORGANISER]} />}>
+            {/* SuperAdmin exclusive event creation route */}
+            <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN]} />}>
               <Route path="/events/new" element={<CreateEventPage />} />
+            </Route>
+
+            {/* Organiser & SuperAdmin analytics routes */}
+            <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.EVENT_ORGANISER]} />}>
               <Route path="/admin/analytics" element={<AnalyticsPage />} />
             </Route>
 

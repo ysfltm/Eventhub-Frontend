@@ -291,7 +291,7 @@ const SidebarContent = ({ navSections, location, collapsed, onItemClick, user, o
    DashboardLayout — Main layout shell
 ───────────────────────────────────────────────────────────────────────────── */
 const DashboardLayout = () => {
-    const { user, logout, isOrganiser: ctxIsOrganiser, isStaff, isSponsor } = useContext(AuthContext);
+    const { user, logout, isOrganiser: ctxIsOrganiser, isSuperAdmin, isStaff, isSponsor } = useContext(AuthContext);
     const isOrganiser = ctxIsOrganiser ?? (user?.role === 'EventOrganizer' || user?.role === 'EventOrganiser' || user?.role === 'SuperAdmin' || user?.role === 'Admin');
     const { t } = useLanguage();
     const location = useLocation();
@@ -322,7 +322,7 @@ const DashboardLayout = () => {
     ];
 
     const organiserItems = [
-        { label: t('nav.createEvent', 'Publish Event'), path: '/events/new', icon: PlusCircle },
+        ...(isSuperAdmin ? [{ label: t('nav.createEvent', 'Publish Event'), path: '/events/new', icon: PlusCircle }] : []),
         { label: t('nav.users', 'User Roster'), path: '/admin/users', icon: Users },
         { label: t('nav.checkIn', 'Door Check-In'), path: '/admin/check-in', icon: QrCode },
         { label: t('nav.companies', 'Company Hosts'), path: '/admin/companies', icon: Building2 },

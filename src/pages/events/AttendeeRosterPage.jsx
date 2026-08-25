@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Users,
   ArrowLeft,
   Search,
   CheckCircle2,
@@ -14,10 +13,12 @@ import {
   MessageSquare,
   UserPlus,
   Send,
-  SendHorizontal,
   AlertCircle,
   Building2,
   User,
+  X,
+  FileText,
+  CalendarClock,
 } from 'lucide-react';
 import { LinkedInIcon } from '../../components/ui/LinkedInIcon';
 import axiosClient from '../../api/axiosClient';
@@ -31,8 +32,8 @@ import { Label } from '../../components/ui/Label';
 import { PersonAutocomplete } from '../../components/ui/PersonAutocomplete';
 import { useAuth } from '../../context/AuthContext';
 import {
-  sendSinglePass,
-  sendAllPasses,
+  sendSingleProgram,
+  sendAllPrograms,
   sendSingleInvitation,
   sendAllInvitations,
   checkPassDispatchStatus,
@@ -46,6 +47,7 @@ const AttendeeRosterPage = () => {
   const userCompanyId = !isSuperAdmin && (user?.idCompany || user?.companyId) ? (user.idCompany || user.companyId) : null;
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedPersonIds, setSelectedPersonIds] = useState([]);
   const [dispatchStatus, setDispatchStatus] = useState(null);
@@ -204,10 +206,46 @@ const AttendeeRosterPage = () => {
     },
   });
 
-  // Send Pass (Single)
-  const sendSinglePassMutation = useMutation({
+  // STAGE 1: Send Event Program (Single - Email + WhatsApp)
+  const sendSingleProgramMutation = useMutation({
     mutationFn: async (participationId) => {
-      return await sendSinglePass(participationId);
+      return await sendSingleProgram(participationId);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['eventParticipations', activeEventId] });
+      setDispatchStatus({ type: 'success', message: data?.message || 'Event Program dispatched via Email & WhatsApp!' });
+      setTimeout(() => setDispatchStatus(null), 4000);
+    },
+    onError: (err) => {
+      setDispatchStatus({
+        type: 'error',
+        message: err.response?.data?.message || err.message || 'Failed to dispatch event program.',
+      });
+    },
+  });
+
+  // STAGE 1: Send All Event Programs (Bulk - Email + WhatsApp)
+  const sendAllProgramsMutation = useMutation({
+    mutationFn: async () => {
+      return await sendAllPrograms(activeEventId, attendees);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['eventParticipations', activeEventId] });
+      setDispatchStatus({ type: 'success', message: data?.message || 'Event Programs dispatched via Email & WhatsApp to all participants!' });
+      setTimeout(() => setDispatchStatus(null), 4000);
+    },
+    onError: (err) => {
+      setDispatchStatus({
+        type: 'error',
+        message: err.response?.data?.message || err.message || 'Failed to dispatch bulk event programs.',
+      });
+    },
+  });
+
+  // STAGE 2: Send Official Invitation / Access Pass (Single - Email + WhatsApp)
+  const sendSingleInvitationMutation = useMutation({
+    mutationFn: async (targetPartId) => {
+      return await sendSingleInvitation(targetPartId);
     },
     onSuccess: (data, targetPartId) => {
       queryClient.setQueriesData({ queryKey: ['eventParticipations', activeEventId] }, (oldData) => {
@@ -229,21 +267,21 @@ const AttendeeRosterPage = () => {
         return Array.isArray(oldData) ? updated : { ...oldData, data: updated };
       });
       queryClient.invalidateQueries({ queryKey: ['eventParticipations', activeEventId] });
-      setDispatchStatus({ type: 'success', message: data?.message || 'Pass dispatched via Email & WhatsApp!' });
+      setDispatchStatus({ type: 'success', message: data?.message || 'Official Invitation & Pass dispatched via Email & WhatsApp!' });
       setTimeout(() => setDispatchStatus(null), 4000);
     },
     onError: (err) => {
       setDispatchStatus({
         type: 'error',
-        message: err.response?.data?.message || err.message || 'Failed to dispatch pass.',
+        message: err.response?.data?.message || err.message || 'Failed to send invitation pass.',
       });
     },
   });
 
-  // Send All Passes (Bulk)
-  const sendAllPassesMutation = useMutation({
+  // STAGE 2: Send All Official Invitations / Access Passes (Bulk - Email + WhatsApp)
+  const sendAllInvitationsMutation = useMutation({
     mutationFn: async () => {
-      return await sendAllPasses(activeEventId, attendees);
+      return await sendAllInvitations(activeEventId, attendees);
     },
     onSuccess: (data) => {
       queryClient.setQueriesData({ queryKey: ['eventParticipations', activeEventId] }, (oldData) => {
@@ -259,55 +297,7 @@ const AttendeeRosterPage = () => {
         return Array.isArray(oldData) ? updated : { ...oldData, data: updated };
       });
       queryClient.invalidateQueries({ queryKey: ['eventParticipations', activeEventId] });
-      setDispatchStatus({ type: 'success', message: data?.message || 'All passes queued and dispatched!' });
-      setTimeout(() => setDispatchStatus(null), 4000);
-    },
-    onError: (err) => {
-      setDispatchStatus({
-        type: 'error',
-        message: err.response?.data?.message || err.message || 'Failed to dispatch bulk passes.',
-      });
-    },
-  });
-
-  // Send Single WhatsApp Template Invitation ("hello_world")
-  const sendSingleInvitationMutation = useMutation({
-    mutationFn: async (targetPartId) => {
-      return await sendSingleInvitation(targetPartId);
-    },
-    onSuccess: (data) => {
-      queryClient.setQueriesData({ queryKey: ['eventParticipations', activeEventId] }, (oldData) => {
-        if (!oldData) return oldData;
-        const list = Array.isArray(oldData) ? oldData : (oldData?.data || oldData?.$values || []);
-        const updated = list.map((item) => ({ ...item, sentWhatsApp: true, whatsAppSent: true }));
-        return Array.isArray(oldData) ? updated : { ...oldData, data: updated };
-      });
-      queryClient.invalidateQueries({ queryKey: ['eventParticipations', activeEventId] });
-      setDispatchStatus({ type: 'success', message: data?.message || 'WhatsApp template invitation sent to attendee!' });
-      setTimeout(() => setDispatchStatus(null), 4000);
-    },
-    onError: (err) => {
-      setDispatchStatus({
-        type: 'error',
-        message: err.response?.data?.message || err.message || 'Failed to send WhatsApp invitation.',
-      });
-    },
-  });
-
-  // Send All WhatsApp Template Invitations (Bulk "hello_world")
-  const sendAllInvitationsMutation = useMutation({
-    mutationFn: async () => {
-      return await sendAllInvitations(activeEventId, attendees);
-    },
-    onSuccess: (data) => {
-      queryClient.setQueriesData({ queryKey: ['eventParticipations', activeEventId] }, (oldData) => {
-        if (!oldData) return oldData;
-        const list = Array.isArray(oldData) ? oldData : (oldData?.data || oldData?.$values || []);
-        const updated = list.map((item) => ({ ...item, sentWhatsApp: true, whatsAppSent: true }));
-        return Array.isArray(oldData) ? updated : { ...oldData, data: updated };
-      });
-      queryClient.invalidateQueries({ queryKey: ['eventParticipations', activeEventId] });
-      setDispatchStatus({ type: 'success', message: data?.message || 'Bulk WhatsApp template invitations sent!' });
+      setDispatchStatus({ type: 'success', message: data?.message || 'Official Invitation Passes dispatched via Email & WhatsApp to all participants!' });
       setTimeout(() => setDispatchStatus(null), 4000);
     },
     onError: (err) => {
@@ -376,23 +366,64 @@ const AttendeeRosterPage = () => {
 
   const filteredAttendees = attendees.filter((item) => {
     const { fullName, email, companyName, personId } = getParticipantDetails(item);
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.toLowerCase().trim();
     const personIdStr = String(personId || '');
     const partIdStr = String(item.idParticipation || item.idPass || item.id || '');
 
-    return (
+    const matchesQuery =
+      !query ||
       fullName.toLowerCase().includes(query) ||
       email.toLowerCase().includes(query) ||
       companyName.toLowerCase().includes(query) ||
       personIdStr.includes(query) ||
-      partIdStr.includes(query)
-    );
+      partIdStr.includes(query);
+
+    if (!matchesQuery) return false;
+
+    if (!statusFilter) return true;
+
+    const rawStatus = (
+      item.status ||
+      (item.checkInStatus || item.isCheckedIn
+        ? 'CheckedIn'
+        : item.isCancelled
+        ? 'Cancelled'
+        : 'Pending')
+    ).toLowerCase();
+
+    if (statusFilter === 'checkedin') {
+      return rawStatus.includes('check');
+    }
+    if (statusFilter === 'confirmed') {
+      return rawStatus === 'confirmed';
+    }
+    if (statusFilter === 'reconfirm') {
+      return rawStatus.includes('reconfirm') || rawStatus.includes('re-confirm');
+    }
+    if (statusFilter === 'cancelled') {
+      return rawStatus.includes('cancel');
+    }
+    if (statusFilter === 'invited' || statusFilter === 'pending') {
+      return (
+        !rawStatus.includes('check') &&
+        rawStatus !== 'confirmed' &&
+        !rawStatus.includes('reconfirm') &&
+        !rawStatus.includes('re-confirm') &&
+        !rawStatus.includes('cancel')
+      );
+    }
+
+    return true;
   });
 
-  const confirmedCount = attendees.filter((a) => (a.status || '').toLowerCase().includes('confirm')).length;
+  const confirmedCount = attendees.filter((a) => (a.status || '').toLowerCase() === 'confirmed').length;
+  const reConfirmCount = attendees.filter((a) => {
+    const st = (a.status || '').toLowerCase().replace('-', '');
+    return st === 'reconfirm';
+  }).length;
   const checkedInCount = attendees.filter((a) => a.checkInStatus || a.isCheckedIn || (a.status || '').toLowerCase().includes('check')).length;
   const cancelledCount = attendees.filter((a) => a.isCancelled || (a.status || '').toLowerCase().includes('cancel')).length;
-  const pendingCount = attendees.length - (confirmedCount + checkedInCount + cancelledCount);
+  const pendingCount = Math.max(0, attendees.length - (confirmedCount + reConfirmCount + checkedInCount + cancelledCount));
 
   const handleExportCSV = () => {
     if (attendees.length === 0) return;
@@ -510,7 +541,10 @@ const AttendeeRosterPage = () => {
    * - Cancelled ➔ Red / Slate
    */
   const getStatusBadge = (item) => {
-    const rawStatus = (item.status || (item.checkInStatus || item.isCheckedIn ? 'CheckedIn' : item.isCancelled ? 'Cancelled' : 'Pending')).toLowerCase();
+    const rawStatus = (
+      item.status ||
+      (item.checkInStatus || item.isCheckedIn ? 'CheckedIn' : item.isCancelled ? 'Cancelled' : 'Pending')
+    ).toLowerCase();
 
     if (rawStatus.includes('check')) {
       return (
@@ -519,7 +553,17 @@ const AttendeeRosterPage = () => {
         </span>
       );
     }
-    if (rawStatus.includes('confirm')) {
+    if (rawStatus.includes('reconfirm') || rawStatus.includes('re-confirm')) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-950/60 border border-purple-800/50 text-purple-300 shrink-0"
+          title="Contact on another date for re-confirmation"
+        >
+          <CalendarClock className="w-3 h-3 text-purple-400" /> Re-Confirm
+        </span>
+      );
+    }
+    if (rawStatus === 'confirmed' || (rawStatus.includes('confirm') && !rawStatus.includes('reconfirm') && !rawStatus.includes('re-confirm'))) {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-950/60 border border-emerald-800/50 text-emerald-300 shrink-0">
           <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Confirmed
@@ -583,23 +627,76 @@ const AttendeeRosterPage = () => {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="p-3 bg-[var(--surface-850)] border border-emerald-800/40 rounded-2xl text-center min-w-[90px] shadow-md">
+            <button
+              type="button"
+              onClick={() => setStatusFilter((prev) => (prev === 'confirmed' ? '' : 'confirmed'))}
+              className={`p-3 rounded-2xl text-center min-w-[90px] shadow-md transition-all cursor-pointer border ${
+                statusFilter === 'confirmed'
+                  ? 'bg-emerald-900/60 border-emerald-400 ring-2 ring-emerald-500/40'
+                  : 'bg-[var(--surface-850)] border-emerald-800/40 hover:bg-emerald-950/30'
+              }`}
+              title="Click to filter by Confirmed"
+            >
               <span className="text-[10px] font-bold uppercase text-emerald-400 block">Confirmed</span>
               <span className="text-xl font-black text-emerald-300">{confirmedCount}</span>
-            </div>
-            <div className="p-3 bg-[var(--surface-850)] border border-amber-800/40 rounded-2xl text-center min-w-[90px] shadow-md">
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter((prev) => (prev === 'invited' ? '' : 'invited'))}
+              className={`p-3 rounded-2xl text-center min-w-[90px] shadow-md transition-all cursor-pointer border ${
+                statusFilter === 'invited'
+                  ? 'bg-amber-900/60 border-amber-400 ring-2 ring-amber-500/40'
+                  : 'bg-[var(--surface-850)] border-amber-800/40 hover:bg-amber-950/30'
+              }`}
+              title="Click to filter by Invited / Pending"
+            >
               <span className="text-[10px] font-bold uppercase text-amber-400 block">Pending</span>
               <span className="text-xl font-black text-amber-300">{pendingCount}</span>
-            </div>
-            <div className="p-3 bg-[var(--surface-850)] border border-cyan-800/40 rounded-2xl text-center min-w-[90px] shadow-md">
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter((prev) => (prev === 'reconfirm' ? '' : 'reconfirm'))}
+              className={`p-3 rounded-2xl text-center min-w-[90px] shadow-md transition-all cursor-pointer border ${
+                statusFilter === 'reconfirm'
+                  ? 'bg-purple-900/60 border-purple-400 ring-2 ring-purple-500/40'
+                  : 'bg-[var(--surface-850)] border-purple-800/40 hover:bg-purple-950/30'
+              }`}
+              title="Click to filter by Re-Confirm (Follow-up scheduled)"
+            >
+              <span className="text-[10px] font-bold uppercase text-purple-400 block">Re-Confirm</span>
+              <span className="text-xl font-black text-purple-300">{reConfirmCount}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter((prev) => (prev === 'checkedin' ? '' : 'checkedin'))}
+              className={`p-3 rounded-2xl text-center min-w-[90px] shadow-md transition-all cursor-pointer border ${
+                statusFilter === 'checkedin'
+                  ? 'bg-cyan-900/60 border-cyan-400 ring-2 ring-cyan-500/40'
+                  : 'bg-[var(--surface-850)] border-cyan-800/40 hover:bg-cyan-950/30'
+              }`}
+              title="Click to filter by Checked-In"
+            >
               <span className="text-[10px] font-bold uppercase text-cyan-400 block">CheckedIn</span>
               <span className="text-xl font-black text-cyan-300">{checkedInCount}</span>
-            </div>
+            </button>
+
             {cancelledCount > 0 && (
-              <div className="p-3 bg-[var(--surface-850)] border border-rose-800/40 rounded-2xl text-center min-w-[90px] shadow-md">
+              <button
+                type="button"
+                onClick={() => setStatusFilter((prev) => (prev === 'cancelled' ? '' : 'cancelled'))}
+                className={`p-3 rounded-2xl text-center min-w-[90px] shadow-md transition-all cursor-pointer border ${
+                  statusFilter === 'cancelled'
+                    ? 'bg-rose-900/60 border-rose-400 ring-2 ring-rose-500/40'
+                    : 'bg-[var(--surface-850)] border-rose-800/40 hover:bg-rose-950/30'
+                }`}
+                title="Click to filter by Cancelled"
+              >
                 <span className="text-[10px] font-bold uppercase text-rose-400 block">Cancelled</span>
                 <span className="text-xl font-black text-rose-300">{cancelledCount}</span>
-              </div>
+              </button>
             )}
           </div>
         </div>
@@ -608,16 +705,39 @@ const AttendeeRosterPage = () => {
       {/* Prominent Bulk-Action Toolbar above Attendee Data Table */}
       <Card className="cst-stagger-2 p-4 bg-[var(--surface-900)] border-[var(--border-default)] rounded-3xl shadow-lg">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
-          {/* Left: Search Bar */}
-          <div className="flex items-center gap-3 bg-[var(--surface-800)] p-2.5 px-3.5 rounded-2xl border border-[var(--border-default)] w-full lg:w-96">
-            <Search className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
-            <Input
-              type="text"
-              placeholder="Search by participant name, company, email, or ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="border-none shadow-none focus:ring-0 bg-transparent text-xs p-0"
-            />
+          {/* Left: Search Bar & Status Filter */}
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto flex-1">
+            <div className="flex items-center gap-3 bg-[var(--surface-800)] p-2.5 px-3.5 rounded-2xl border border-[var(--border-default)] w-full sm:w-80 shadow-sm">
+              <Search className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
+              <Input
+                type="text"
+                placeholder="Search by name, company, email, or ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="border-none shadow-none focus:ring-0 bg-transparent text-xs p-0 w-full"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-200">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Attendance Status Filter Dropdown */}
+            <div className="w-full sm:w-52">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full bg-[var(--surface-800)] border border-[var(--border-default)] text-xs text-[var(--text-secondary)] rounded-2xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] cursor-pointer font-medium"
+              >
+                <option value="">⏱️ All Statuses ({attendees.length})</option>
+                <option value="invited">🟡 Invited / Pending ({pendingCount})</option>
+                <option value="confirmed">🟢 Confirmed ({confirmedCount})</option>
+                <option value="reconfirm">🟣 Re-Confirm ({reConfirmCount})</option>
+                <option value="checkedin">🔵 Checked-In ({checkedInCount})</option>
+                {cancelledCount > 0 && <option value="cancelled">🔴 Cancelled ({cancelledCount})</option>}
+              </select>
+            </div>
           </div>
 
           {/* Right: Bulk Actions Toolbar */}
@@ -630,28 +750,29 @@ const AttendeeRosterPage = () => {
               <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Add Participant
             </Button>
 
+            {/* Bulk Actions: Stage 1 Send Programs & Stage 2 Send Invitations */}
+            <Button
+              onClick={() => sendAllProgramsMutation.mutate()}
+              disabled={sendAllProgramsMutation.isPending || attendees.length === 0}
+              size="sm"
+              variant="outline"
+              className="text-xs border-cyan-500/40 text-cyan-400 hover:bg-cyan-950/40"
+              title="Dispatch Event Program PDF via Email & WhatsApp to all participants"
+            >
+              <FileText className="w-3.5 h-3.5 mr-1.5 text-cyan-400" />
+              {sendAllProgramsMutation.isPending ? 'Sending Programs...' : 'Send All Programs'}
+            </Button>
+
             <Button
               onClick={() => sendAllInvitationsMutation.mutate()}
               disabled={sendAllInvitationsMutation.isPending || attendees.length === 0}
               size="sm"
               variant="outline"
               className="text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-950/40"
-              title="Send initial WhatsApp template invitation ('hello_world') to all attendees"
+              title="Dispatch Official Event Invitation & Pass with QR code via Email & WhatsApp to all participants"
             >
-              <MessageSquare className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+              <Send className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
               {sendAllInvitationsMutation.isPending ? 'Sending Invitations...' : 'Send All Invitations'}
-            </Button>
-
-            <Button
-              onClick={() => sendAllPassesMutation.mutate()}
-              disabled={sendAllPassesMutation.isPending || attendees.length === 0}
-              size="sm"
-              variant="outline"
-              className="text-xs border-indigo-500/40 text-indigo-400 hover:bg-indigo-950/40"
-              title="Generate and dispatch Digital Passes & Programs to all attendees"
-            >
-              <SendHorizontal className="w-3.5 h-3.5 mr-1.5" />
-              {sendAllPassesMutation.isPending ? 'Dispatching All Passes...' : 'Send All Passes'}
             </Button>
 
             <Button onClick={handleExportCSV} disabled={attendees.length === 0} size="sm" variant="outline" className="text-xs">
@@ -675,9 +796,25 @@ const AttendeeRosterPage = () => {
             </Alert>
           </div>
         ) : filteredAttendees.length === 0 ? (
-          <div className="py-16 text-center space-y-2">
-            <p className="text-sm font-semibold text-[var(--text-primary)]">No attendees match your filter.</p>
-            <p className="text-xs text-[var(--text-secondary)]">Try adjusting your search criteria or register a new attendee.</p>
+          <div className="py-16 text-center space-y-3">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">No attendees match your current filter.</p>
+            <p className="text-xs text-[var(--text-secondary)]">
+              {statusFilter || searchQuery
+                ? `No participant found with status "${statusFilter || 'Any'}" or query "${searchQuery || 'Any'}".`
+                : 'No participants registered for this event yet.'}
+            </p>
+            {(statusFilter || searchQuery) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter('');
+                  setSearchQuery('');
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[var(--surface-800)] hover:bg-[var(--surface-700)] text-[var(--cst-blue-400)] border border-[var(--border-default)] transition-colors cursor-pointer"
+              >
+                Reset All Filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -707,7 +844,8 @@ const AttendeeRosterPage = () => {
                   const partId = item.idParticipation || item.idPass || item.id;
                   const { personId, fullName, email, companyName, linkedInUrl } = getParticipantDetails(item);
                   const { sentEmail, sentWhatsApp } = checkPassDispatchStatus(item);
-                  const currentStatus = item.status || (item.checkInStatus || item.isCheckedIn ? 'CheckedIn' : item.isCancelled ? 'Cancelled' : 'Pending');
+                  const rawStatus = item.status || (item.checkInStatus || item.isCheckedIn ? 'CheckedIn' : item.isCancelled ? 'Cancelled' : 'Pending');
+                  const currentStatus = String(rawStatus).toLowerCase().replace('-', '') === 'reconfirm' ? 'ReConfirm' : rawStatus;
 
                   return (
                     <tr key={partId || idx} className="hover:bg-[var(--nav-hover-bg)] transition-colors">
@@ -769,6 +907,7 @@ const AttendeeRosterPage = () => {
                               <option value="Pending">Pending</option>
                               <option value="Invited">Invited</option>
                               <option value="Confirmed">Confirmed</option>
+                              <option value="ReConfirm">Re-Confirm</option>
                               <option value="CheckedIn">CheckedIn</option>
                               <option value="Cancelled">Cancelled</option>
                             </select>
@@ -821,28 +960,30 @@ const AttendeeRosterPage = () => {
                             </Button>
                           )}
 
+                          {/* Stage 1: Send Program Button (Email + WhatsApp) */}
+                          <Button
+                            onClick={() => partId && sendSingleProgramMutation.mutate(partId)}
+                            disabled={sendSingleProgramMutation.isPending || !partId}
+                            size="sm"
+                            variant="outline"
+                            className="text-[11px] py-1 px-2 border-cyan-600/30 text-cyan-400 hover:bg-cyan-950/40"
+                            title="Dispatch Event Program PDF via Email & WhatsApp to this attendee"
+                          >
+                            <FileText className="w-3 h-3 mr-1 text-cyan-400" />
+                            {sendSingleProgramMutation.isPending ? 'Sending...' : 'Send Program'}
+                          </Button>
+
+                          {/* Stage 2: Send Official Invitation / Pass with QR Button (Email + WhatsApp) */}
                           <Button
                             onClick={() => partId && sendSingleInvitationMutation.mutate(partId)}
                             disabled={sendSingleInvitationMutation.isPending || !partId}
                             size="sm"
                             variant="outline"
                             className="text-[11px] py-1 px-2 border-emerald-600/30 text-emerald-400 hover:bg-emerald-950/40"
-                            title="Send initial WhatsApp template invitation ('hello_world')"
+                            title="Dispatch Official Invitation Pass & QR code via Email & WhatsApp"
                           >
-                            <MessageSquare className="w-3 h-3 mr-1" />
+                            <Send className="w-3 h-3 mr-1 text-emerald-400" />
                             {sendSingleInvitationMutation.isPending ? 'Sending...' : 'Send Invitation'}
-                          </Button>
-
-                          <Button
-                            onClick={() => partId && sendSinglePassMutation.mutate(partId)}
-                            disabled={sendSinglePassMutation.isPending || !partId}
-                            size="sm"
-                            variant="outline"
-                            className="text-[11px] py-1 px-2 border-[var(--cst-blue-600)]/30 text-[var(--cst-blue-400)] hover:bg-[var(--cst-blue-950)]/40"
-                            title="Generate and dispatch Digital Pass & Program PDF via Email/WhatsApp"
-                          >
-                            <Send className="w-3 h-3 mr-1" />
-                            {sendSinglePassMutation.isPending ? 'Sending...' : 'Send Pass'}
                           </Button>
                         </div>
                       </td>
@@ -864,7 +1005,7 @@ const AttendeeRosterPage = () => {
         }}
         title="Add Participants to Event"
         description={`Register guests or attendees in bulk for Event #${activeEventId}`}
-        maxWidth="max-w-xl"
+        maxWidth="max-w-2xl"
       >
         <form onSubmit={handleAddParticipant} className="space-y-5">
           <div>

@@ -18,7 +18,6 @@ import {
   Trash2,
   Users,
   Clock,
-  Sparkles,
   Gamepad2,
 } from 'lucide-react';
 import { LinkedInIcon } from '../../components/ui/LinkedInIcon';
@@ -130,13 +129,15 @@ const EventDetailsPage = () => {
     enabled: isOrganiser,
   });
 
-  const companiesList = Array.isArray(rawCompaniesData)
-    ? rawCompaniesData
-    : Array.isArray(rawCompaniesData?.data)
-    ? rawCompaniesData.data
-    : Array.isArray(rawCompaniesData?.$values)
-    ? rawCompaniesData.$values
-    : [];
+  const companiesList = useMemo(() => {
+    return Array.isArray(rawCompaniesData)
+      ? rawCompaniesData
+      : Array.isArray(rawCompaniesData?.data)
+      ? rawCompaniesData.data
+      : Array.isArray(rawCompaniesData?.$values)
+      ? rawCompaniesData.$values
+      : [];
+  }, [rawCompaniesData]);
 
   const userCompanyId = useMemo(() => {
     if (isSuperAdmin) return null;
@@ -256,9 +257,12 @@ const EventDetailsPage = () => {
     },
   });
 
-  // Delete Event Mutation: DELETE /api/Event/{id}
+  // Delete Event Mutation: DELETE /api/Event/{id} (SuperAdmin exclusive)
   const deleteEventMutation = useMutation({
     mutationFn: async () => {
+      if (!isSuperAdmin) {
+        throw new Error('Only SuperAdmin has permission to delete events.');
+      }
       const res = await axiosClient.delete(ENDPOINTS.EVENT.BY_ID(id));
       return res.data;
     },
@@ -546,26 +550,26 @@ const EventDetailsPage = () => {
         
         <div className="flex items-center gap-2">
           {isOrganiser && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleOpenEditModal}
-                className="cst-btn-motion text-xs text-sky-400 border-sky-800/40 hover:bg-sky-950/40 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                <span>{t('eventDetails.editEvent', 'Edit Event')}</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsDeleteModalOpen(true)}
-                className="cst-btn-motion text-xs text-red-400 border-red-800/40 hover:bg-red-950/40 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{t('eventDetails.deleteEvent', 'Delete')}</span>
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenEditModal}
+              className="cst-btn-motion text-xs text-sky-400 border-sky-800/40 hover:bg-sky-950/40 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span>{t('eventDetails.editEvent', 'Edit Event')}</span>
+            </Button>
+          )}
+          {isSuperAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="cst-btn-motion text-xs text-red-400 border-red-800/40 hover:bg-red-950/40 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{t('eventDetails.deleteEvent', 'Delete')}</span>
+            </Button>
           )}
           <span className="text-[10px] text-[var(--cst-blue-400)] font-mono uppercase tracking-widest bg-[var(--cst-blue-800)]/20 px-2.5 py-1 rounded-md border border-[var(--cst-blue-600)]/30">
             Event ID #{event.idEvent || event.IdEvent || id}

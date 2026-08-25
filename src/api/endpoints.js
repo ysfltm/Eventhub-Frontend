@@ -32,6 +32,8 @@ export const ENDPOINTS = {
     BY_EVENT: (eventId) => `/Participation/event/${eventId}`,
     CHECK_IN: '/Participation/check-in',
     UPDATE_STATUS: (participationId) => `/Participation/${participationId}/status`,
+    SEND_PROGRAM: (participationId) => `/Participation/${participationId}/send-program`,
+    SEND_ALL_PROGRAMS: (eventId) => `/Participation/event/${eventId}/send-all-programs`,
     SEND_PASS: (participationId) => `/Participation/${participationId}/send-pass`,
     SEND_ALL_PASSES: (eventId) => `/Participation/event/${eventId}/send-all-passes`,
     SEND_INVITATION: (participationId) => `/Participation/${participationId}/send-invitation`,

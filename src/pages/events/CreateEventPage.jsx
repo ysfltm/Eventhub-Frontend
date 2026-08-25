@@ -51,6 +51,12 @@ const CreateEventPage = () => {
     capacity: 100,
   });
 
+  React.useEffect(() => {
+    if (!isSuperAdmin) {
+      navigate('/events', { replace: true });
+    }
+  }, [isSuperAdmin, navigate]);
+
   const handleApplyAiData = (aiPlan) => {
     setFormData((prev) => ({
       ...prev,

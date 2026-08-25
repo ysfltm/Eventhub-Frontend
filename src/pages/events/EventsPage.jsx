@@ -19,7 +19,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { fetchMyPasses, extractEventId, cancelParticipation, saveLocalClaimedPass, removeLocalClaimedPass } from '../../utils/passUtils';
 
 const EventsPage = () => {
-  const { user, isOrganiser, isSuperAdmin } = useContext(AuthContext);
+  const { user, isSuperAdmin } = useContext(AuthContext);
   const { t } = useLanguage();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -41,7 +41,7 @@ const EventsPage = () => {
   });
   const [formError, setFormError] = useState('');
 
-  const canCreateEvents = isOrganiser || isSuperAdmin;
+  const canCreateEvents = isSuperAdmin;
 
   // Fetch all events
   const { data: rawEventsData = [], isLoading: eventsLoading, error: eventsError } = useQuery({

@@ -19,7 +19,6 @@ import {
   Inbox,
   CheckCircle2,
   FileSpreadsheet,
-  Upload,
   Plus,
   Download,
   Copy,
@@ -27,12 +26,12 @@ import {
   FileText,
   Sparkles,
   Info,
-  ListPlus,
   Eye,
   EyeOff,
   Key,
   Lock,
-  Check,
+  Clock,
+  Hourglass,
 } from 'lucide-react';
 import { LinkedInIcon } from '../../components/ui/LinkedInIcon';
 import axiosClient from '../../api/axiosClient';
@@ -93,6 +92,7 @@ const UserManagementPage = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('');
   const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState(''); // '' | 'active' | 'expiring_soon' | 'expired'
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -129,6 +129,7 @@ const UserManagementPage = () => {
     position: '',
     linkedInUrl: '',
     role: ROLES.ATTENDEE,
+    expirationDate: '',
   });
 
   const [feedback, setFeedback] = useState(null);
@@ -200,6 +201,12 @@ const UserManagementPage = () => {
     }
     return 'My Company';
   }, [user, userCompanyId, companiesMap]);
+
+  // Assignable roles: SuperAdmin can assign all roles; EventOrganiser/Company admins can assign all roles EXCEPT SuperAdmin
+  const assignableRoles = useMemo(() => {
+    if (isSuperAdmin) return ALL_ROLES;
+    return ALL_ROLES.filter((r) => r !== ROLES.SUPER_ADMIN && normalizeRole(r) !== 'SuperAdmin');
+  }, [isSuperAdmin]);
 
   // Helper for safe error message extraction
   const extractErrorMessage = (err, fallbackMsg) => {
@@ -274,14 +281,83 @@ const UserManagementPage = () => {
       position: '',
       linkedInUrl: '',
       role: ROLES.ATTENDEE,
+      expirationDate: '',
     });
     setShowCreatePassword(false);
     setShowEditPassword(false);
   };
 
+  // Helper for computing expiration information
+  const getAccountExpirationInfo = (person) => {
+    const expDateVal = person?.expirationDate || person?.ExpirationDate;
+    const isDeactivated = person?.isAccountActivated === false;
+
+    if (!expDateVal) {
+      return {
+        status: isDeactivated ? 'deactivated' : 'permanent',
+        isExpired: false,
+        daysLeft: null,
+        formattedDate: 'Permanent (No Expiry)',
+        badgeClass: isDeactivated
+          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+        label: isDeactivated ? 'Deactivated' : 'Active (Permanent)',
+      };
+    }
+
+    const now = new Date();
+    const expDate = new Date(expDateVal);
+    const diffMs = expDate.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    const formattedDate = expDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+    if (diffDays <= 0 || person?.isExpired) {
+      return {
+        status: 'expired',
+        isExpired: true,
+        daysLeft: diffDays,
+        formattedDate,
+        badgeClass: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
+        label: 'Expired / Deactivated',
+      };
+    }
+
+    if (diffDays <= 7) {
+      return {
+        status: 'expiring_soon',
+        isExpired: false,
+        daysLeft: diffDays,
+        formattedDate,
+        badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30 animate-pulse',
+        label: `Expires in ${diffDays}d`,
+      };
+    }
+
+    return {
+      status: 'active',
+      isExpired: false,
+      daysLeft: diffDays,
+      formattedDate,
+      badgeClass: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+      label: `Expires in ${diffDays}d`,
+    };
+  };
+
+  const applyPresetExpiration = (days) => {
+    if (days === null) {
+      setFormData((prev) => ({ ...prev, expirationDate: '' }));
+      return;
+    }
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    const iso = d.toISOString().split('T')[0];
+    setFormData((prev) => ({ ...prev, expirationDate: iso }));
+  };
+
   // 3. Create Person Mutation: Syncs to both /api/Person ([dbo].[People]) and /api/Auth/register (Identity Auth)
   const createPersonMutation = useMutation({
     mutationFn: async (payload) => {
+      const expDateIso = payload.expirationDate ? new Date(payload.expirationDate).toISOString() : null;
       const personPayload = {
         firstName: payload.firstName,
         FirstName: payload.firstName,
@@ -303,6 +379,8 @@ const UserManagementPage = () => {
         LinkedInUrl: payload.linkedInUrl || null,
         role: payload.role || ROLES.ATTENDEE,
         Role: payload.role || ROLES.ATTENDEE,
+        expirationDate: expDateIso,
+        ExpirationDate: expDateIso,
         isActive: true,
         IsActive: true,
         isAccountActive: true,
@@ -315,6 +393,8 @@ const UserManagementPage = () => {
         ...personPayload,
         password: payload.password || 'EventHubPassword2026!',
         Password: payload.password || 'EventHubPassword2026!',
+        expirationDate: expDateIso,
+        ExpirationDate: expDateIso,
         isActive: true,
         IsActive: true,
         isAccountActive: true,
@@ -577,6 +657,7 @@ const UserManagementPage = () => {
       ...prev,
       password: initialPass,
       idCompany: userCompanyId ? String(userCompanyId) : '',
+      expirationDate: '',
     }));
     setIsCreateOpen(true);
   };
@@ -584,6 +665,10 @@ const UserManagementPage = () => {
   const handleOpenEdit = (person) => {
     setSelectedPerson(person);
     const compId = userCompanyId || person.idCompany || person.company?.idCompany || person.companyId || '';
+    const expDateStr = person.expirationDate
+      ? new Date(person.expirationDate).toISOString().split('T')[0]
+      : (person.ExpirationDate ? new Date(person.ExpirationDate).toISOString().split('T')[0] : '');
+
     setFormData({
       firstName: person.firstName || '',
       lastName: person.lastName || '',
@@ -594,6 +679,7 @@ const UserManagementPage = () => {
       position: person.position || '',
       linkedInUrl: person.linkedInUrl || person.LinkedInUrl || '',
       role: normalizeRole(person.role || ROLES.ATTENDEE),
+      expirationDate: expDateStr,
     });
     setShowEditPassword(false);
     setIsEditOpen(true);
@@ -639,6 +725,11 @@ const UserManagementPage = () => {
     const compObj = effectiveCompId ? companiesMap[effectiveCompId] : null;
     const finalPassword = formData.password ? formData.password.trim() : generateSecurePassword();
 
+    const rawRole = normalizeRole(formData.role);
+    const assignedRole = (!isSuperAdmin && (rawRole === 'SuperAdmin' || formData.role === ROLES.SUPER_ADMIN))
+      ? ROLES.ATTENDEE
+      : rawRole;
+
     const payload = {
       firstName: formData.firstName.trim(),
       lastName: formData.lastName.trim(),
@@ -651,9 +742,11 @@ const UserManagementPage = () => {
       linkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
       LinkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
       companyName: compObj?.name || userCompanyName || '',
-      role: normalizeRole(formData.role),
+      role: assignedRole,
       idCompany: effectiveCompId,
       IdCompany: effectiveCompId,
+      expirationDate: (isSuperAdmin && formData.expirationDate) ? new Date(formData.expirationDate).toISOString() : null,
+      ExpirationDate: (isSuperAdmin && formData.expirationDate) ? new Date(formData.expirationDate).toISOString() : null,
     };
     createPersonMutation.mutate(payload);
   };
@@ -664,6 +757,11 @@ const UserManagementPage = () => {
     const personId = selectedPerson.idPerson || selectedPerson.id;
     const effectiveCompId = userCompanyId || (formData.idCompany ? parseInt(formData.idCompany, 10) : null);
     const compObj = effectiveCompId ? companiesMap[effectiveCompId] : null;
+
+    const rawRole = normalizeRole(formData.role);
+    const assignedRole = (!isSuperAdmin && (rawRole === 'SuperAdmin' || formData.role === ROLES.SUPER_ADMIN))
+      ? (normalizeRole(selectedPerson.role) === 'SuperAdmin' ? ROLES.ATTENDEE : normalizeRole(selectedPerson.role))
+      : rawRole;
 
     const payload = {
       id: personId,
@@ -678,9 +776,15 @@ const UserManagementPage = () => {
       linkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
       LinkedInUrl: formData.linkedInUrl ? formData.linkedInUrl.trim() : null,
       companyName: compObj?.name || selectedPerson.companyName || userCompanyName || '',
-      role: normalizeRole(formData.role),
+      role: assignedRole,
       idCompany: effectiveCompId,
       IdCompany: effectiveCompId,
+      expirationDate: isSuperAdmin
+        ? (formData.expirationDate ? new Date(formData.expirationDate).toISOString() : null)
+        : (selectedPerson.expirationDate || selectedPerson.ExpirationDate || null),
+      ExpirationDate: isSuperAdmin
+        ? (formData.expirationDate ? new Date(formData.expirationDate).toISOString() : null)
+        : (selectedPerson.expirationDate || selectedPerson.ExpirationDate || null),
     };
     if (formData.password && formData.password.trim()) {
       payload.password = formData.password.trim();
@@ -785,7 +889,7 @@ const UserManagementPage = () => {
             role = norm;
           } else if (rem.toLowerCase().includes('linkedin.com')) {
             linkedin = rem;
-          } else if (rem.match(/^[\d\s+()\-]{7,}$/) && !phone) {
+          } else if (rem.match(/^[\d\s+()-]{7,}$/) && !phone) {
             phone = rem;
           } else if (!position) {
             position = rem;
@@ -852,20 +956,27 @@ const UserManagementPage = () => {
 
     const validRows = bulkRows
       .filter((r) => r.email && r.email.trim().includes('@'))
-      .map((r) => ({
-        firstName: r.firstName.trim() || 'Employee',
-        lastName: r.lastName.trim() || '',
-        email: r.email.trim(),
-        password: r.password ? r.password.trim() : (bulkDefaultPassword || 'Event2026!'),
-        Password: r.password ? r.password.trim() : (bulkDefaultPassword || 'Event2026!'),
-        phone: r.phoneNumber.trim() || '',
-        phoneNumber: r.phoneNumber.trim() || '',
-        position: r.position.trim() || 'Staff',
-        linkedInUrl: r.linkedInUrl ? r.linkedInUrl.trim() : null,
-        LinkedInUrl: r.linkedInUrl ? r.linkedInUrl.trim() : null,
-        role: normalizeRole(r.role || bulkDefaultRole || ROLES.ATTENDEE),
-        idCompany: parseInt(targetCompId, 10),
-      }));
+      .map((r) => {
+        const rawRole = normalizeRole(r.role || bulkDefaultRole || ROLES.ATTENDEE);
+        const assignedRole = (!isSuperAdmin && (rawRole === 'SuperAdmin' || r.role === ROLES.SUPER_ADMIN))
+          ? ROLES.ATTENDEE
+          : rawRole;
+
+        return {
+          firstName: r.firstName.trim() || 'Employee',
+          lastName: r.lastName.trim() || '',
+          email: r.email.trim(),
+          password: r.password ? r.password.trim() : (bulkDefaultPassword || 'Event2026!'),
+          Password: r.password ? r.password.trim() : (bulkDefaultPassword || 'Event2026!'),
+          phone: r.phoneNumber.trim() || '',
+          phoneNumber: r.phoneNumber.trim() || '',
+          position: r.position.trim() || 'Staff',
+          linkedInUrl: r.linkedInUrl ? r.linkedInUrl.trim() : null,
+          LinkedInUrl: r.linkedInUrl ? r.linkedInUrl.trim() : null,
+          role: assignedRole,
+          idCompany: parseInt(targetCompId, 10),
+        };
+      });
 
     if (validRows.length === 0) {
       alert('Please provide at least one employee with a valid email address.');
@@ -926,9 +1037,16 @@ const UserManagementPage = () => {
       const normRole = normalizeRole(person.role || person.Role || ROLES.ATTENDEE);
       const matchesRole = !selectedRoleFilter || normRole === selectedRoleFilter;
 
-      return matchesSearch && matchesRole;
+      const expInfo = getAccountExpirationInfo(person);
+      const matchesStatus =
+        !selectedStatusFilter ||
+        (selectedStatusFilter === 'active' && (expInfo.status === 'active' || expInfo.status === 'permanent')) ||
+        (selectedStatusFilter === 'expiring_soon' && expInfo.status === 'expiring_soon') ||
+        (selectedStatusFilter === 'expired' && (expInfo.status === 'expired' || expInfo.status === 'deactivated'));
+
+      return matchesSearch && matchesRole && matchesStatus;
     });
-  }, [scopedPersons, debouncedSearch, selectedRoleFilter, companiesMap]);
+  }, [scopedPersons, debouncedSearch, selectedRoleFilter, selectedStatusFilter, companiesMap]);
 
   // Pagination Calculations
   const totalItems = filteredPersons.length;
@@ -1128,6 +1246,23 @@ const UserManagementPage = () => {
                 </div>
               )
             )}
+
+            {/* Status Filter Dropdown */}
+            <div className="w-full sm:w-44">
+              <select
+                value={selectedStatusFilter}
+                onChange={(e) => {
+                  setSelectedStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full bg-[var(--surface-800)] border border-[var(--border-default)] text-xs text-[var(--text-secondary)] rounded-2xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] cursor-pointer"
+              >
+                <option value="">⏱️ All Statuses</option>
+                <option value="active">🟢 Active / Permanent</option>
+                <option value="expiring_soon">🟡 Expiring Soon (&lt; 7d)</option>
+                <option value="expired">🔴 Expired / Deactivated</option>
+              </select>
+            </div>
           </div>
 
           {/* Action Buttons */}
@@ -1197,6 +1332,7 @@ const UserManagementPage = () => {
                     <th className="py-3.5 px-4">Company Affiliation</th>
                     <th className="py-3.5 px-4">Position</th>
                     <th className="py-3.5 px-4">System Role</th>
+                    <th className="py-3.5 px-4">Account Status</th>
                     <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1299,7 +1435,32 @@ const UserManagementPage = () => {
                           })()}
                         </td>
 
-                        {/* 7. Action Controls */}
+                        {/* 7. Account Status & Expiration */}
+                        <td className="py-3.5 px-4">
+                          {(() => {
+                            const expInfo = getAccountExpirationInfo(person);
+                            return (
+                              <div className="space-y-1">
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-sm ${expInfo.badgeClass}`}>
+                                  {expInfo.status === 'expired' ? (
+                                    <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                  ) : expInfo.status === 'expiring_soon' ? (
+                                    <Hourglass className="w-3 h-3 text-amber-400" />
+                                  ) : (
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                  )}
+                                  <span>{expInfo.label}</span>
+                                </span>
+                                <div className="text-[10px] font-mono text-[var(--text-muted)] flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-slate-500" />
+                                  <span>{expInfo.formattedDate}</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+
+                        {/* 8. Action Controls */}
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <MagneticIcon maxShift={4} scaleOnHover={1.05}>
@@ -1523,7 +1684,7 @@ const UserManagementPage = () => {
                 onChange={(e) => setFormData((prev) => ({ ...prev, role: e.target.value }))}
                 className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] font-semibold"
               >
-                {ALL_ROLES.map((r) => {
+                {assignableRoles.map((r) => {
                   const style = getRoleStyle(r);
                   return (
                     <option key={r} value={r}>
@@ -1561,6 +1722,57 @@ const UserManagementPage = () => {
               )}
             </div>
           </div>
+
+          {isSuperAdmin && (
+            <div className="space-y-2 p-3 bg-[var(--surface-850)] border border-[var(--border-default)] rounded-2xl">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="create-expiration" className="flex items-center gap-1.5 text-xs font-bold">
+                  <Clock className="w-3.5 h-3.5 text-[var(--cst-blue-400)]" />
+                  <span>Account Expiration Date (SuperAdmin Only)</span>
+                </Label>
+                <span className="text-[10px] text-[var(--text-muted)]">Auto-deactivates upon arrival</span>
+              </div>
+              <Input
+                id="create-expiration"
+                type="date"
+                value={formData.expirationDate}
+                onChange={(e) => setFormData((prev) => ({ ...prev, expirationDate: e.target.value }))}
+                className="text-xs font-mono"
+              />
+              {/* Quick Presets */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-[var(--text-muted)] font-semibold mr-1">Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => applyPresetExpiration(30)}
+                  className="px-2 py-0.5 text-[10px] rounded-lg bg-[var(--surface-700)] hover:bg-[var(--surface-600)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] transition-colors cursor-pointer"
+                >
+                  +30 Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPresetExpiration(90)}
+                  className="px-2 py-0.5 text-[10px] rounded-lg bg-[var(--surface-700)] hover:bg-[var(--surface-600)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] transition-colors cursor-pointer"
+                >
+                  +90 Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPresetExpiration(365)}
+                  className="px-2 py-0.5 text-[10px] rounded-lg bg-[var(--surface-700)] hover:bg-[var(--surface-600)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] transition-colors cursor-pointer"
+                >
+                  +1 Year
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPresetExpiration(null)}
+                  className="px-2 py-0.5 text-[10px] rounded-lg bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-500/30 transition-colors cursor-pointer"
+                >
+                  Never (Permanent)
+                </button>
+              </div>
+            </div>
+          )}
 
           <div>
             <Label htmlFor="create-linkedin" className="flex items-center gap-1.5">
@@ -1706,7 +1918,7 @@ const UserManagementPage = () => {
                 onChange={(e) => setFormData((prev) => ({ ...prev, role: e.target.value }))}
                 className="w-full mt-1 p-2.5 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--cst-blue-500)] font-semibold"
               >
-                {ALL_ROLES.map((r) => {
+                {assignableRoles.map((r) => {
                   const style = getRoleStyle(r);
                   return (
                     <option key={r} value={r}>
@@ -1744,6 +1956,57 @@ const UserManagementPage = () => {
               )}
             </div>
           </div>
+
+          {isSuperAdmin && (
+            <div className="space-y-2 p-3 bg-[var(--surface-850)] border border-[var(--border-default)] rounded-2xl">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit-expiration" className="flex items-center gap-1.5 text-xs font-bold">
+                  <Clock className="w-3.5 h-3.5 text-[var(--cst-blue-400)]" />
+                  <span>Account Expiration Date (SuperAdmin Only)</span>
+                </Label>
+                <span className="text-[10px] text-[var(--text-muted)]">Extending reactivates account</span>
+              </div>
+              <Input
+                id="edit-expiration"
+                type="date"
+                value={formData.expirationDate}
+                onChange={(e) => setFormData((prev) => ({ ...prev, expirationDate: e.target.value }))}
+                className="text-xs font-mono"
+              />
+              {/* Quick Presets */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-[var(--text-muted)] font-semibold mr-1">Extend:</span>
+                <button
+                  type="button"
+                  onClick={() => applyPresetExpiration(30)}
+                  className="px-2 py-0.5 text-[10px] rounded-lg bg-[var(--surface-700)] hover:bg-[var(--surface-600)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] transition-colors cursor-pointer"
+                >
+                  +30 Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPresetExpiration(90)}
+                  className="px-2 py-0.5 text-[10px] rounded-lg bg-[var(--surface-700)] hover:bg-[var(--surface-600)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] transition-colors cursor-pointer"
+                >
+                  +90 Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPresetExpiration(365)}
+                  className="px-2 py-0.5 text-[10px] rounded-lg bg-[var(--surface-700)] hover:bg-[var(--surface-600)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] transition-colors cursor-pointer"
+                >
+                  +1 Year
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPresetExpiration(null)}
+                  className="px-2 py-0.5 text-[10px] rounded-lg bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-500/30 transition-colors cursor-pointer"
+                >
+                  Clear (Permanent)
+                </button>
+              </div>
+            </div>
+          )}
 
           <div>
             <Label htmlFor="edit-linkedin" className="flex items-center gap-1.5">
@@ -1916,7 +2179,7 @@ const UserManagementPage = () => {
                       onChange={(e) => setBulkDefaultRole(e.target.value)}
                       className="p-1 px-2 rounded-lg text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     >
-                      {ALL_ROLES.map((r) => {
+                      {assignableRoles.map((r) => {
                         const style = getRoleStyle(r);
                         return (
                           <option key={r} value={r}>
@@ -2087,7 +2350,7 @@ const UserManagementPage = () => {
                               onChange={(e) => handleUpdateBulkRow(row.id, 'role', e.target.value)}
                               className="w-full h-8 p-1 px-2 rounded-xl text-xs bg-[var(--surface-800)] border border-[var(--border-default)] text-[var(--text-primary)] font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer min-w-[140px]"
                             >
-                              {ALL_ROLES.map((r) => {
+                              {assignableRoles.map((r) => {
                                 const style = getRoleStyle(r);
                                 return (
                                   <option key={r} value={r}>
